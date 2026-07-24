@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
@@ -15,6 +15,16 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { Match, Team, Innings } from "@/types";
+
+interface MatchWithDetails extends Match {
+  homeTeam: Pick<Team, "id" | "name" | "shortName" | "logo">;
+  awayTeam: Pick<Team, "id" | "name" | "shortName" | "logo">;
+  innings: (Innings & {
+    battingCard: { playerId: string; runs: number; balls: number }[];
+    overs: { overNumber: number; totalRuns: number; ballsCount: number }[];
+  })[];
+}
 
 const TABS = [
   { label: "Overview", href: "", icon: LayoutDashboard },
@@ -34,13 +44,40 @@ export default function MatchLayout({
 }) {
   const { matchId } = use(params);
   const pathname = usePathname();
+  const [match, setMatch] = useState<MatchWithDetails | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const currentTab = TABS.find((tab) => {
-    const href = tab.href
-      ? `/matches/${matchId}/${tab.href}`
-      : `/matches/${matchId}`;
-    return pathname === href;
-  })?.href ?? "";
+  useEffect(() => {
+    async function fetchMatch() {
+      try {
+        const res = await fetch(`/api/matches/${matchId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMatch(data.match);
+        }
+      } catch {
+        // silently fail, header will show placeholders
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchMatch();
+  }, [matchId]);
+
+  const currentTab =
+    TABS.find((tab) => {
+      const href = tab.href
+        ? `/matches/${matchId}/${tab.href}`
+        : `/matches/${matchId}`;
+      return pathname === href;
+    })?.href ?? "";
+
+  const isLive = match?.status === "LIVE";
+  const isCompleted = match?.status === "COMPLETED";
+  const currentInnings =
+    isLive && match && match.innings.length > 0
+      ? match.innings[match.innings.length - 1]
+      : null;
 
   return (
     <div className="min-h-screen">
@@ -49,34 +86,62 @@ export default function MatchLayout({
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-6">
               <div className="text-center">
-                <p className="text-xs text-muted mb-1">Team A</p>
-                <p className="text-lg font-bold text-white">MI</p>
+                <p className="text-xs text-muted mb-1">Home</p>
+                <p className="text-lg font-bold text-white">
+                  {loading ? "---" : match?.homeTeam.shortName ?? "TBA"}
+                </p>
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-2xl font-bold gradient-text">vs</span>
-                <span className="text-[10px] text-accent font-medium">
-                  LIVE
-                </span>
+                {isLive && (
+                  <span className="text-[10px] text-accent font-medium">
+                    LIVE
+                  </span>
+                )}
+                {isCompleted && (
+                  <span className="text-[10px] text-success font-medium">
+                    COMPLETED
+                  </span>
+                )}
+                {!isLive && !isCompleted && !loading && (
+                  <span className="text-[10px] text-muted font-medium">
+                    {match?.status ?? ""}
+                  </span>
+                )}
               </div>
               <div className="text-center">
-                <p className="text-xs text-muted mb-1">Team B</p>
-                <p className="text-lg font-bold text-white">CSK</p>
+                <p className="text-xs text-muted mb-1">Away</p>
+                <p className="text-lg font-bold text-white">
+                  {loading ? "---" : match?.awayTeam.shortName ?? "TBA"}
+                </p>
               </div>
             </div>
 
             <div className="hidden md:flex items-center gap-4 text-sm">
-              <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
-                <p className="text-xs text-muted">Score</p>
-                <p className="text-white font-bold">156/4</p>
-              </div>
-              <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
-                <p className="text-xs text-muted">Overs</p>
-                <p className="text-white font-bold">15.3</p>
-              </div>
-              <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
-                <p className="text-xs text-muted">CRR</p>
-                <p className="text-accent font-bold">10.06</p>
-              </div>
+              {currentInnings && (
+                <>
+                  <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
+                    <p className="text-xs text-muted">Score</p>
+                    <p className="text-white font-bold">
+                      {currentInnings.totalRuns}/{currentInnings.totalWickets}
+                    </p>
+                  </div>
+                  <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
+                    <p className="text-xs text-muted">Overs</p>
+                    <p className="text-white font-bold">
+                      {currentInnings.totalOvers}
+                    </p>
+                  </div>
+                </>
+              )}
+              {!loading && !currentInnings && (
+                <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
+                  <p className="text-xs text-muted">Format</p>
+                  <p className="text-white font-bold">
+                    {match?.totalOvers ?? ""} overs
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,56 +1,106 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { AlertCircle, Loader2 } from "lucide-react";
 
-interface Innings {
-  id: number;
-  team: string;
-  runs: number;
-  wickets: number;
-  overs: number;
-  extras: number;
+interface Player {
+  id: string;
+  name: string;
 }
 
-const innings: Innings[] = [
-  { id: 1, team: "Mumbai Indians", runs: 187, wickets: 6, overs: 20, extras: 12 },
-  { id: 2, team: "Chennai Super Kings", runs: 156, wickets: 4, overs: 15.3, extras: 8 },
-];
+interface BattingCard {
+  id: string;
+  playerId: string;
+  player: Player;
+  runs: number;
+  balls: number;
+  fours: number;
+  sixes: number;
+  strikeRate: number;
+  isNotOut: boolean;
+  dismissalType?: string | null;
+  bowlerId?: string | null;
+  fielderId?: string | null;
+  batPosition?: number;
+}
 
-const battingCard1 = [
-  { no: 1, name: "Rohit Sharma", dismissal: "c Jadeja b Bumrah", runs: 48, balls: 32, fours: 5, sixes: 2, sr: 150.00 },
-  { no: 2, name: "Ishan Kishan", dismissal: "c Dhoni b Chahar", runs: 23, balls: 18, fours: 3, sixes: 0, sr: 127.78 },
-  { no: 3, name: "Suryakumar Yadav", dismissal: "c Conway b Jadeja", runs: 67, balls: 41, fours: 7, sixes: 3, sr: 163.41 },
-  { no: 4, name: "Tilak Varma", dismissal: "not out", runs: 34, balls: 24, fours: 2, sixes: 2, sr: 141.67 },
-  { no: 5, name: "Hardik Pandya", dismissal: "c Gaikwad b Pathirana", runs: 8, balls: 5, fours: 1, sixes: 0, sr: 160.00 },
-  { no: 6, name: "Tim David", dismissal: "not out", runs: 5, balls: 3, fours: 0, sixes: 0, sr: 166.67 },
-];
+interface BowlingCard {
+  id: string;
+  playerId: string;
+  player: Player;
+  overs: number;
+  maidens: number;
+  runs: number;
+  wickets: number;
+  wides: number;
+  noBalls: number;
+  economy: number;
+}
 
-const bowlingCard1 = [
-  { name: "Jasprit Bumrah", overs: 4, maidens: 0, runs: 34, wickets: 2, econ: 8.50, wides: 2, noBalls: 0 },
-  { name: "Deepak Chahar", overs: 4, maidens: 0, runs: 42, wickets: 1, econ: 10.50, wides: 1, noBalls: 1 },
-  { name: "Ravindra Jadeja", overs: 4, maidens: 0, runs: 38, wickets: 1, econ: 9.50, wides: 0, noBalls: 0 },
-  { name: "Moeen Ali", overs: 3, maidens: 0, runs: 30, wickets: 0, econ: 10.00, wides: 0, noBalls: 0 },
-  { name: "Matheesha Pathirana", overs: 4, maidens: 0, runs: 31, wickets: 2, econ: 7.75, wides: 1, noBalls: 0 },
-  { name: "Tushar Deshpande", overs: 1, maidens: 0, runs: 14, wickets: 0, econ: 14.00, wides: 0, noBalls: 0 },
-];
+interface FallOfWicket {
+  id: string;
+  wicketNumber: number;
+  playerId: string;
+  runs: number;
+  overs: number;
+  bowlerId?: string;
+  batterName?: string;
+}
 
-const fallOfWickets1 = [
-  { wicket: 1, score: "42/1", batsman: "Ishan Kishan", over: 5.2 },
-  { wicket: 2, score: "98/2", batsman: "Rohit Sharma", over: 11.4 },
-  { wicket: 3, score: "142/3", batsman: "Suryakumar Yadav", over: 16.1 },
-  { wicket: 4, score: "158/4", batsman: "Hardik Pandya", over: 17.5 },
-  { wicket: 5, score: "170/5", batsman: "Tim David", over: 18.4 },
-  { wicket: 6, score: "187/6", batsman: "Unknown", over: 20.0 },
-];
+interface Innings {
+  id: string;
+  inningsNumber: number;
+  battingTeam: string;
+  bowlingTeam: string;
+  totalRuns: number;
+  totalWickets: number;
+  totalOvers: number;
+  extras: number;
+  battingCard: BattingCard[];
+  bowlingCard: BowlingCard[];
+  fallOfWickets: FallOfWicket[];
+  overs: Array<{
+    id: string;
+    overNumber: number;
+    totalRuns: number;
+    extras: number;
+  }>;
+}
 
-const extrasBreakdown1 = [
-  { type: "Wides", count: 4 },
-  { type: "No Balls", count: 1 },
-  { type: "Byes", count: 3 },
-  { type: "Leg Byes", count: 4 },
-];
+interface Match {
+  id: string;
+  status: string;
+  homeTeam: { id: string; name: string };
+  awayTeam: { id: string; name: string };
+  totalOvers: number;
+  innings: Innings[];
+}
+
+function getDismissalText(card: BattingCard): string {
+  if (card.isNotOut) return "not out";
+  if (card.dismissalType) {
+    const type = card.dismissalType.replace(/_/g, " ").toLowerCase();
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+  return "—";
+}
+
+function getExtrasBreakdown(innings: Innings) {
+  const wides = innings.bowlingCard.reduce((s, b) => s + b.wides, 0);
+  const noBalls = innings.bowlingCard.reduce((s, b) => s + b.noBalls, 0);
+  const total = innings.extras;
+  const byes = Math.max(0, total - wides - noBalls);
+  const legByes = 0;
+  return [
+    { type: "Wides", count: wides },
+    { type: "No Balls", count: noBalls },
+    { type: "Byes", count: byes },
+    { type: "Leg Byes", count: legByes },
+  ].filter((e) => e.count > 0);
+}
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -63,8 +113,80 @@ const rowVariants = {
 };
 
 export default function ScorecardPage() {
+  const params = useParams();
+  const matchId = params.matchId as string;
+
+  const [match, setMatch] = useState<Match | null>(null);
+  const [innings, setInnings] = useState<Innings[]>([]);
   const [activeInnings, setActiveInnings] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [matchRes, inningsRes] = await Promise.all([
+        fetch(`/api/matches/${matchId}`),
+        fetch(`/api/matches/${matchId}/innings`),
+      ]);
+
+      if (!matchRes.ok) {
+        const data = await matchRes.json();
+        throw new Error(data.error || "Failed to fetch match");
+      }
+
+      const matchData = await matchRes.json();
+      setMatch(matchData.match);
+
+      if (inningsRes.ok) {
+        const innData = await inningsRes.json();
+        setInnings(innData.innings ?? []);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load scorecard");
+    } finally {
+      setLoading(false);
+    }
+  }, [matchId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <p className="text-sm text-muted">Loading scorecard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AlertCircle className="w-10 h-10 text-danger" />
+          <p className="text-sm text-danger">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (innings.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <p className="text-sm text-muted">No scorecard data available</p>
+        </div>
+      </div>
+    );
+  }
+
   const current = innings[activeInnings];
+  const extrasBreakdown = getExtrasBreakdown(current);
+  const totalExtras = extrasBreakdown.reduce((s, e) => s + e.count, 0);
 
   return (
     <motion.div
@@ -74,21 +196,27 @@ export default function ScorecardPage() {
       className="space-y-6"
     >
       <div className="flex gap-2 overflow-x-auto pb-2">
-        {innings.map((inn, idx) => (
-          <motion.button
-            key={inn.id}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setActiveInnings(idx)}
-            className={cn(
-              "px-5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all",
-              activeInnings === idx
-                ? "bg-primary text-white glow-primary"
-                : "bg-white/5 text-muted border border-white/10"
-            )}
-          >
-            {inn.team} — {inn.runs}/{inn.wickets}
-          </motion.button>
-        ))}
+        {innings.map((inn, idx) => {
+          const teamName =
+            inn.inningsNumber === 1
+              ? match?.homeTeam.name ?? inn.battingTeam
+              : match?.awayTeam.name ?? inn.battingTeam;
+          return (
+            <motion.button
+              key={inn.id}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setActiveInnings(idx)}
+              className={cn(
+                "px-5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all",
+                activeInnings === idx
+                  ? "bg-primary text-white glow-primary"
+                  : "bg-white/5 text-muted border border-white/10"
+              )}
+            >
+              {teamName} — {inn.totalRuns}/{inn.totalWickets}
+            </motion.button>
+          );
+        })}
       </div>
 
       <motion.div
@@ -96,14 +224,19 @@ export default function ScorecardPage() {
         className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
       >
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-bold text-white">{current.team}</h2>
+          <h2 className="text-lg font-bold text-white">
+            {innings[activeInnings].battingTeam || match?.homeTeam.name || "Batting Team"}
+          </h2>
           <p className="text-2xl font-bold gradient-text">
-            {current.runs}/{current.wickets}
+            {current.totalRuns}/{current.totalWickets}
           </p>
         </div>
         <p className="text-sm text-muted">
-          Overs: {current.overs} &middot; Extras: {current.extras} &middot; RR:{" "}
-          {(current.runs / current.overs).toFixed(2)}
+          Overs: {current.totalOvers} &middot; Extras: {current.extras} &middot;
+          RR:{" "}
+          {current.totalOvers > 0
+            ? (current.totalRuns / current.totalOvers).toFixed(2)
+            : "0.00"}
         </p>
       </motion.div>
 
@@ -142,16 +275,18 @@ export default function ScorecardPage() {
               </tr>
             </thead>
             <tbody>
-              {battingCard1.map((b) => (
+              {[...current.battingCard].sort((a, b) => (a.batPosition ?? 0) - (b.batPosition ?? 0)).map((b) => (
                 <tr
-                  key={b.no}
+                  key={b.id}
                   className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
                 >
                   <td className="px-4 py-3">
-                    <span className="text-white font-medium">{b.name}</span>
+                    <span className="text-white font-medium">
+                      {b.player.name}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-muted text-xs">
-                    {b.dismissal}
+                    {getDismissalText(b)}
                   </td>
                   <td className="px-4 py-3 text-right text-white font-semibold">
                     {b.runs}
@@ -160,7 +295,7 @@ export default function ScorecardPage() {
                   <td className="px-4 py-3 text-right text-muted">{b.fours}</td>
                   <td className="px-4 py-3 text-right text-muted">{b.sixes}</td>
                   <td className="px-4 py-3 text-right text-accent">
-                    {b.sr.toFixed(2)}
+                    {b.strikeRate.toFixed(2)}
                   </td>
                 </tr>
               ))}
@@ -207,13 +342,15 @@ export default function ScorecardPage() {
               </tr>
             </thead>
             <tbody>
-              {bowlingCard1.map((b) => (
+              {[...current.bowlingCard].sort((a, b) => b.wickets - a.wickets).map((b) => (
                 <tr
-                  key={b.name}
+                  key={b.id}
                   className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
                 >
                   <td className="px-4 py-3">
-                    <span className="text-white font-medium">{b.name}</span>
+                    <span className="text-white font-medium">
+                      {b.player.name}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-right text-muted">{b.overs}</td>
                   <td className="px-4 py-3 text-right text-muted">
@@ -224,7 +361,7 @@ export default function ScorecardPage() {
                     {b.wickets}
                   </td>
                   <td className="px-4 py-3 text-right text-accent">
-                    {b.econ.toFixed(2)}
+                    {b.economy.toFixed(2)}
                   </td>
                   <td className="px-4 py-3 text-right text-muted">{b.wides}</td>
                   <td className="px-4 py-3 text-right text-muted">
@@ -244,22 +381,29 @@ export default function ScorecardPage() {
         >
           <h3 className="font-semibold text-white mb-4">Fall of Wickets</h3>
           <div className="space-y-3">
-            {fallOfWickets1.map((fow) => (
-              <div
-                key={fow.wicket}
-                className="flex items-center gap-3"
-              >
-                <div className="w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center text-xs text-danger font-bold">
-                  {fow.wicket}
+            {(current.fallOfWickets ?? []).length === 0 ? (
+              <p className="text-sm text-muted">No wickets fallen yet</p>
+            ) : (
+              (current.fallOfWickets ?? []).map((fow) => (
+                <div
+                  key={fow.id}
+                  className="flex items-center gap-3"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center text-xs text-danger font-bold">
+                    {fow.wicketNumber}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-white">
+                      {fow.batterName || "Batsman"}
+                    </p>
+                    <p className="text-xs text-muted">
+                      Score: {fow.runs}/{fow.wicketNumber} &middot; Over:{" "}
+                      {fow.overs}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm text-white">{fow.batsman}</p>
-                  <p className="text-xs text-muted">
-                    Score: {fow.score} &middot; Over: {fow.over}
-                  </p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </motion.div>
 
@@ -269,19 +413,23 @@ export default function ScorecardPage() {
         >
           <h3 className="font-semibold text-white mb-4">Extras</h3>
           <div className="space-y-3">
-            {extrasBreakdown1.map((e) => (
+            {extrasBreakdown.map((e) => (
               <div
                 key={e.type}
                 className="flex items-center justify-between py-2 border-b border-white/5"
               >
                 <span className="text-sm text-muted">{e.type}</span>
-                <span className="text-sm text-white font-semibold">{e.count}</span>
+                <span className="text-sm text-white font-semibold">
+                  {e.count}
+                </span>
               </div>
             ))}
             <div className="flex items-center justify-between pt-2">
-              <span className="text-sm text-white font-medium">Total Extras</span>
+              <span className="text-sm text-white font-medium">
+                Total Extras
+              </span>
               <span className="text-sm text-accent font-bold">
-                {extrasBreakdown1.reduce((s, e) => s + e.count, 0)}
+                {totalExtras}
               </span>
             </div>
           </div>

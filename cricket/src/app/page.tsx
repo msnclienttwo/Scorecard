@@ -11,9 +11,7 @@ import {
   CreditCard,
   ArrowRight,
   Play,
-  Star,
   ChevronDown,
-  CircleDot,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -77,13 +75,6 @@ const features = [
   },
 ];
 
-const stats = [
-  { value: "10M+", label: "Balls Scored" },
-  { value: "50K+", label: "Matches Created" },
-  { value: "100K+", label: "Players Tracked" },
-  { value: "200+", label: "Countries" },
-];
-
 const steps = [
   {
     num: "01",
@@ -99,30 +90,6 @@ const steps = [
     num: "03",
     title: "Share & Analyze",
     desc: "Share live scores with the world. Dive deep into analytics and statistics.",
-  },
-];
-
-const testimonials = [
-  {
-    name: "Arjun Mehta",
-    role: "Tournament Organizer",
-    quote:
-      "ScoreCast has completely transformed how we run our local cricket tournament. The live scoring is incredibly smooth.",
-    avatar: "AM",
-  },
-  {
-    name: "Priya Sharma",
-    role: "Cricket Coach",
-    quote:
-      "The analytics and player statistics help me understand my team's strengths and weaknesses like never before.",
-    avatar: "PS",
-  },
-  {
-    name: "Rahul Verma",
-    role: "Weekend Cricketer",
-    quote:
-      "Finally a cricket scoring app that looks amazing and is actually fun to use. My friends love following our matches live.",
-    avatar: "RV",
   },
 ];
 
@@ -303,27 +270,6 @@ export default function LandingPage() {
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true }}
-            variants={stagger}
-            className="grid grid-cols-2 md:grid-cols-4 gap-8"
-          >
-            {stats.map((s, i) => (
-              <motion.div key={i} variants={fadeUp} className="text-center">
-                <div className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mb-2">
-                  {s.value}
-                </div>
-                <div className="text-white/40 text-sm">{s.label}</div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="py-24 px-4">
-        <div className="max-w-5xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
             variants={fadeUp}
             className="text-center mb-16"
           >
@@ -357,61 +303,6 @@ export default function LandingPage() {
                   <p className="text-white/50 text-sm leading-relaxed">
                     {s.desc}
                   </p>
-                </div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="py-24 px-4">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={fadeUp}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              Loved by cricket enthusiasts
-            </h2>
-          </motion.div>
-
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={stagger}
-            className="grid md:grid-cols-3 gap-6"
-          >
-            {testimonials.map((t, i) => (
-              <motion.div
-                key={i}
-                variants={fadeUp}
-                className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06]"
-              >
-                <div className="flex items-center gap-1 mb-4">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      className="w-4 h-4 fill-yellow-500 text-yellow-500"
-                    />
-                  ))}
-                </div>
-                <p className="text-white/60 text-sm leading-relaxed mb-6">
-                  &ldquo;{t.quote}&rdquo;
-                </p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-sm font-bold text-white">
-                    {t.avatar}
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-white">
-                      {t.name}
-                    </div>
-                    <div className="text-xs text-white/40">{t.role}</div>
-                  </div>
                 </div>
               </motion.div>
             ))}

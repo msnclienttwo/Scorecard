@@ -1,163 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { Sparkles, Zap, MessageSquare } from "lucide-react";
+import { Sparkles, Zap, MessageSquare, Loader2 } from "lucide-react";
 
 interface CommentaryEntry {
-  id: number;
-  timestamp: string;
-  over: number;
-  ball: number;
+  id: string;
   content: string;
-  isHighlight: boolean;
+  overNumber: number | null;
+  ballNumber: number | null;
+  inningsNumber: number | null;
   isAutomatic: boolean;
-  emoji?: string;
+  isHighlight: boolean;
+  eventType: string | null;
+  emoji: string | null;
+  createdAt: string;
+  user?: { id: string; name: string; image: string | null } | null;
 }
 
-const commentaryData: CommentaryEntry[] = [
-  {
-    id: 1,
-    timestamp: "19:42",
-    over: 1,
-    ball: 1,
-    content: "SIX! Rohit Sharma goes big over long-on! What a way to start the innings. Bumrah drops it short and he's made no mistake.",
-    isHighlight: true,
-    isAutomatic: false,
-    emoji: "🚀",
-  },
-  {
-    id: 2,
-    timestamp: "19:43",
-    over: 1,
-    ball: 2,
-    content: "Good length outside off, left alone by Ishan Kishan. No run.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-  {
-    id: 3,
-    timestamp: "19:44",
-    over: 1,
-    ball: 3,
-    content: "FOUR! Short and pulled over mid-wicket by Ishan! That's gone all the way to the boundary in a flash.",
-    isHighlight: true,
-    isAutomatic: false,
-    emoji: "🔥",
-  },
-  {
-    id: 4,
-    timestamp: "19:45",
-    over: 1,
-    ball: 4,
-    content: "Flicked off the pads, taken two runs. Good running between the wickets.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-  {
-    id: 5,
-    timestamp: "19:45",
-    over: 1,
-    ball: 5,
-    content: "Full delivery on middle, defended solidly back to the bowler.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-  {
-    id: 6,
-    timestamp: "19:46",
-    over: 1,
-    ball: 6,
-    content: "Pushed to covers for a single. Ishan rotates the strike. End of the over.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-  {
-    id: 7,
-    timestamp: "19:48",
-    over: 2,
-    ball: 1,
-    content: "WOW! Suryakumar Yadav with an absolutely sensational pull shot! The ball rockets over deep mid-wicket for a MASSIVE SIX! What a way to announce your arrival!",
-    isHighlight: true,
-    isAutomatic: false,
-    emoji: "💥",
-  },
-  {
-    id: 8,
-    timestamp: "19:49",
-    over: 2,
-    ball: 3,
-    content: "WICKET! Rohit Sharma caught behind! He's tried to guide it past the keeper but got a thin edge. Chahar strikes! The crowd goes quiet.",
-    isHighlight: true,
-    isAutomatic: false,
-    emoji: "⚡",
-  },
-  {
-    id: 9,
-    timestamp: "19:50",
-    over: 2,
-    ball: 4,
-    content: "Inside edge past the stumps! Lucky escape for SKY. Two runs taken.",
-    isHighlight: false,
-    isAutomatic: false,
-  },
-  {
-    id: 10,
-    timestamp: "19:51",
-    over: 2,
-    ball: 5,
-    content: "FOUR! Pristine cover drive from Suryakumar! The timing was exquisite. Chahar drops it in the slot and pays the price.",
-    isHighlight: true,
-    isAutomatic: false,
-    emoji: "🎯",
-  },
-  {
-    id: 11,
-    timestamp: "19:52",
-    over: 2,
-    ball: 6,
-    content: "Wide ball down the leg side. Extra run to MI.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-  {
-    id: 12,
-    timestamp: "19:55",
-    over: 3,
-    ball: 1,
-    content: "Jadeja into the attack. First ball defended back. Tight line and length.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-  {
-    id: 13,
-    timestamp: "19:56",
-    over: 3,
-    ball: 4,
-    content: "SIX! SKY brings out the helicopter! Over long-on! Jadeja can't believe it. The crowd is on their feet!",
-    isHighlight: true,
-    isAutomatic: false,
-    emoji: "🚁",
-  },
-  {
-    id: 14,
-    timestamp: "19:57",
-    over: 3,
-    ball: 6,
-    content: "Dot ball to end the over. Solid defense from Tilak Varma. MI looking strong.",
-    isHighlight: false,
-    isAutomatic: true,
-  },
-];
+interface CommentaryResponse {
+  commentary: CommentaryEntry[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+function formatTimestamp(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 export default function CommentaryPage() {
+  const params = useParams();
+  const matchId = params.matchId as string;
+
+  const [commentary, setCommentary] = useState<CommentaryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "highlights">("all");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    limit: 50,
+    totalPages: 0,
+  });
+
+  useEffect(() => {
+    async function fetchCommentary() {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/matches/${matchId}/commentary?page=${page}&limit=50`
+        );
+        const data: CommentaryResponse = await res.json();
+        setCommentary(data.commentary || []);
+        setPagination(data.pagination);
+      } catch {
+        console.error("Failed to fetch commentary");
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (matchId) fetchCommentary();
+  }, [matchId, page]);
 
   const filtered =
     filter === "highlights"
-      ? commentaryData.filter((c) => c.isHighlight)
-      : commentaryData;
+      ? commentary.filter((c) => c.isHighlight)
+      : commentary;
 
   return (
     <motion.div
@@ -198,70 +117,123 @@ export default function CommentaryPage() {
         </div>
       </div>
 
-      <div className="relative">
-        <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-white/10" />
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-muted text-sm">No commentary available yet</p>
+        </div>
+      ) : (
+        <div className="relative">
+          <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-white/10" />
 
-        <div className="space-y-6">
-          {filtered.map((entry, idx) => (
-            <motion.div
-              key={entry.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.03 }}
-              className="relative pl-14"
-            >
-              <div
-                className={cn(
-                  "absolute left-4 top-5 w-4 h-4 rounded-full border-2 z-10",
-                  entry.isHighlight
-                    ? "bg-primary border-primary"
-                    : entry.isAutomatic
-                    ? "bg-white/10 border-white/20"
-                    : "bg-accent border-accent"
-                )}
-              />
-
-              <div
-                className={cn(
-                  "bg-white/5 backdrop-blur-xl border rounded-2xl p-5 transition-all hover:bg-white/[0.07]",
-                  entry.isHighlight
-                    ? "border-primary/30"
-                    : "border-white/10"
-                )}
+          <div className="space-y-6">
+            {filtered.map((entry, idx) => (
+              <motion.div
+                key={entry.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                className="relative pl-14"
               >
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-xs text-muted font-mono">
-                    {entry.over}.{entry.ball}
-                  </span>
-                  <span className="text-xs text-muted">{entry.timestamp}</span>
-                  {entry.emoji && <span className="text-lg">{entry.emoji}</span>}
-                  {entry.isHighlight && (
-                    <span className="text-[10px] font-medium text-primary bg-primary/15 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Zap className="w-2.5 h-2.5" />
-                      KEY MOMENT
-                    </span>
-                  )}
-                  {entry.isAutomatic && (
-                    <span className="text-[10px] text-muted/60 bg-white/5 px-2 py-0.5 rounded-full">
-                      AUTO
-                    </span>
-                  )}
-                </div>
-                <p
+                <div
                   className={cn(
-                    "leading-relaxed",
+                    "absolute left-4 top-5 w-4 h-4 rounded-full border-2 z-10",
                     entry.isHighlight
-                      ? "text-white font-medium"
-                      : "text-white/80"
+                      ? "bg-primary border-primary"
+                      : entry.isAutomatic
+                      ? "bg-white/10 border-white/20"
+                      : "bg-accent border-accent"
+                  )}
+                />
+
+                <div
+                  className={cn(
+                    "bg-white/5 backdrop-blur-xl border rounded-2xl p-5 transition-all hover:bg-white/[0.07]",
+                    entry.isHighlight
+                      ? "border-primary/30"
+                      : "border-white/10"
                   )}
                 >
-                  {entry.content}
-                </p>
-              </div>
-            </motion.div>
-          ))}
+                  <div className="flex items-center gap-3 mb-2">
+                    {entry.overNumber != null &&
+                      entry.ballNumber != null && (
+                        <span className="text-xs text-muted font-mono">
+                          {entry.overNumber}.{entry.ballNumber}
+                        </span>
+                      )}
+                    <span className="text-xs text-muted">
+                      {formatTimestamp(entry.createdAt)}
+                    </span>
+                    {entry.emoji && (
+                      <span className="text-lg">{entry.emoji}</span>
+                    )}
+                    {entry.isHighlight && (
+                      <span className="text-[10px] font-medium text-primary bg-primary/15 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Zap className="w-2.5 h-2.5" />
+                        KEY MOMENT
+                      </span>
+                    )}
+                    {entry.isAutomatic && (
+                      <span className="text-[10px] text-muted/60 bg-white/5 px-2 py-0.5 rounded-full">
+                        AUTO
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    className={cn(
+                      "leading-relaxed",
+                      entry.isHighlight
+                        ? "text-white font-medium"
+                        : "text-white/80"
+                    )}
+                  >
+                    {entry.content}
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-medium transition-all",
+              page <= 1
+                ? "bg-white/5 text-muted/40 cursor-not-allowed"
+                : "bg-white/5 text-muted hover:bg-white/10"
+            )}
+          >
+            Previous
+          </motion.button>
+          <span className="text-xs text-muted">
+            Page {pagination.page} of {pagination.totalPages}
+          </span>
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() =>
+              setPage((p) => Math.min(pagination.totalPages, p + 1))
+            }
+            disabled={page >= pagination.totalPages}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-medium transition-all",
+              page >= pagination.totalPages
+                ? "bg-white/5 text-muted/40 cursor-not-allowed"
+                : "bg-white/5 text-muted hover:bg-white/10"
+            )}
+          >
+            Next
+          </motion.button>
+        </div>
+      )}
     </motion.div>
   );
 }

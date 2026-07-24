@@ -1,121 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   LineChart,
   Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
-  Area,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import {
-  TrendingUp,
-  BarChart3,
-  PieChart as PieIcon,
-  Target,
-} from "lucide-react";
+import { TrendingUp, BarChart3, Target, Loader2 } from "lucide-react";
+import type { Match, Innings, BowlingScorecard, BattingScorecard } from "@/types";
 
-const runRateData = [
-  { over: 1, runRate: 8.0, target: 8.75 },
-  { over: 2, runRate: 9.5, target: 8.75 },
-  { over: 3, runRate: 10.2, target: 8.75 },
-  { over: 4, runRate: 9.8, target: 8.75 },
-  { over: 5, runRate: 10.5, target: 8.75 },
-  { over: 6, runRate: 10.1, target: 8.75 },
-  { over: 7, runRate: 10.8, target: 8.75 },
-  { over: 8, runRate: 11.2, target: 8.75 },
-  { over: 9, runRate: 10.6, target: 8.75 },
-  { over: 10, runRate: 10.3, target: 8.75 },
-  { over: 11, runRate: 10.0, target: 8.75 },
-  { over: 12, runRate: 9.8, target: 8.75 },
-  { over: 13, runRate: 10.1, target: 8.75 },
-  { over: 14, runRate: 10.4, target: 8.75 },
-  { over: 15, runRate: 10.06, target: 8.75 },
-];
+interface RunRatePoint {
+  over: number;
+  runRate: number;
+}
 
-const partnershipData = [
-  { partnership: "1st", runs: 42, balls: 36, batsmen: "Rohit & Ishan" },
-  { partnership: "2nd", runs: 56, balls: 42, batsmen: "Rohit & SKY" },
-  { partnership: "3rd", runs: 44, balls: 30, batsmen: "SKY & Tilak" },
-  { partnership: "4th", runs: 16, balls: 12, batsmen: "SKY & Hardik" },
-  { partnership: "5th", runs: 13, balls: 8, batsmen: "Tilak & Hardik" },
-  { partnership: "6th", runs: 5, balls: 4, batsmen: "Tilak & Tim" },
-];
+interface ComputedStats {
+  runRateData: RunRatePoint[];
+  bowlingStats: (BowlingScorecard & { playerName: string })[];
+  battingStats: (BattingScorecard & { playerName: string })[];
+  latestInnings: Innings | null;
+  totalFours: number;
+  totalSixes: number;
+  totalWickets: number;
+  totalDots: number;
+}
 
-const wormData = [
-  { over: 0, mi: 0, csk: 0 },
-  { over: 1, mi: 8, csk: 6 },
-  { over: 2, mi: 18, csk: 14 },
-  { over: 3, mi: 28, csk: 22 },
-  { over: 4, mi: 38, csk: 30 },
-  { over: 5, mi: 50, csk: 38 },
-  { over: 6, mi: 60, csk: 46 },
-  { over: 7, mi: 72, csk: 55 },
-  { over: 8, mi: 84, csk: 64 },
-  { over: 9, mi: 95, csk: 74 },
-  { over: 10, mi: 103, csk: 82 },
-  { over: 11, mi: 112, csk: 90 },
-  { over: 12, mi: 122, csk: 98 },
-  { over: 13, mi: 134, csk: 108 },
-  { over: 14, mi: 148, csk: 120 },
-  { over: 15, mi: 156, csk: 130 },
-];
-
-const manhattanData = [
-  { over: 1, mi: 8, csk: 6 },
-  { over: 2, mi: 10, csk: 8 },
-  { over: 3, mi: 10, csk: 8 },
-  { over: 4, mi: 10, csk: 8 },
-  { over: 5, mi: 12, csk: 8 },
-  { over: 6, mi: 10, csk: 8 },
-  { over: 7, mi: 12, csk: 9 },
-  { over: 8, mi: 12, csk: 9 },
-  { over: 9, mi: 11, csk: 10 },
-  { over: 10, mi: 8, csk: 8 },
-];
-
-const runDistribution = [
-  { name: "Dots", value: 54, color: "#374151" },
-  { name: "1s", value: 32, color: "#22C55E" },
-  { name: "2s", value: 14, color: "#22C55E" },
-  { name: "3s", value: 4, color: "#22C55E" },
-  { name: "4s", value: 20, color: "#2563EB" },
-  { name: "6s", value: 10, color: "#00D4FF" },
-  { name: "Extras", value: 12, color: "#F59E0B" },
-];
-
-const wagonWheelData = Array.from({ length: 30 }, (_, i) => {
-  const angle = Math.random() * 360;
-  const runs = [0, 1, 2, 4, 6][Math.floor(Math.random() * 5)];
-  return {
-    angle,
-    runs,
-    x: Math.cos((angle * Math.PI) / 180) * (runs === 0 ? 30 : runs === 6 ? 100 : runs === 4 ? 80 : 50),
-    y: Math.sin((angle * Math.PI) / 180) * (runs === 0 ? 30 : runs === 6 ? 100 : runs === 4 ? 80 : 50),
-  };
-});
-
-const bowlingAnalysis = [
-  { bowler: "Bumrah", runs: 34, wickets: 2, dotBalls: 10 },
-  { bowler: "Chahar", runs: 42, wickets: 1, dotBalls: 8 },
-  { bowler: "Jadeja", runs: 38, wickets: 1, dotBalls: 9 },
-  { bowler: "Moeen", runs: 30, wickets: 0, dotBalls: 6 },
-  { bowler: "Pathirana", runs: 31, wickets: 2, dotBalls: 11 },
-  { bowler: "Deshpande", runs: 14, wickets: 0, dotBalls: 2 },
-];
-
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name: string; color: string }>; label?: string }) => {
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}) => {
   if (!active || !payload) return null;
   return (
     <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl p-3 text-sm">
@@ -139,7 +64,137 @@ const itemVariants = {
   show: { opacity: 1, y: 0 },
 };
 
+function computeStats(match: Match & { innings: (Innings & { battingCard: (BattingScorecard & { player: { name: string } })[]; bowlingCard: (BowlingScorecard & { player: { name: string } })[]; overs: { totalRuns: number; totalWickets: number; ballsCount: number; overNumber: number }[] })[] }): ComputedStats {
+  const inningsList = match.innings || [];
+
+  const runRateData: RunRatePoint[] = [];
+  const allBowlingStats: (BowlingScorecard & { playerName: string })[] = [];
+  const allBattingStats: (BattingScorecard & { playerName: string })[] = [];
+  let totalFours = 0;
+  let totalSixes = 0;
+  let totalWickets = 0;
+  let totalDots = 0;
+
+  for (const inn of inningsList) {
+    const oversSorted = [...(inn.overs || [])].sort((a, b) => a.overNumber - b.overNumber);
+    let cumulativeRuns = 0;
+    let cumulativeBalls = 0;
+
+    for (const ov of oversSorted) {
+      cumulativeBalls += ov.ballsCount || 0;
+      cumulativeRuns += ov.totalRuns || 0;
+      const oversDecimal = cumulativeBalls / 6;
+      if (oversDecimal > 0) {
+        runRateData.push({
+          over: ov.overNumber,
+          runRate: Math.round((cumulativeRuns / oversDecimal) * 100) / 100,
+        });
+      }
+    }
+
+    for (const bs of inn.bowlingCard || []) {
+      allBowlingStats.push({
+        ...bs,
+        playerName: bs.player.name,
+      });
+    }
+
+    for (const bt of inn.battingCard || []) {
+      allBattingStats.push({
+        ...bt,
+        playerName: bt.player.name,
+      });
+      totalFours += bt.fours || 0;
+      totalSixes += bt.sixes || 0;
+      totalDots += bt.balls - bt.runs - (bt.fours || 0) * 4 - (bt.sixes || 0) * 6;
+    }
+
+    totalWickets += inn.totalWickets || 0;
+  }
+
+  totalDots = Math.max(0, totalDots);
+
+  return {
+    runRateData,
+    bowlingStats: allBowlingStats.sort((a, b) => b.wickets - a.wickets),
+    battingStats: allBattingStats.sort((a, b) => b.runs - a.runs),
+    latestInnings: inningsList.length > 0 ? inningsList[inningsList.length - 1] : null,
+    totalFours,
+    totalSixes,
+    totalWickets,
+    totalDots,
+  };
+}
+
+function ComingSoonCard({ title, icon }: { title: string; icon: React.ReactNode }) {
+  return (
+    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        {icon}
+        <h3 className="font-semibold text-white">{title}</h3>
+      </div>
+      <div className="flex items-center justify-center h-[250px] text-muted text-sm">
+        Coming soon
+      </div>
+    </div>
+  );
+}
+
 export default function StatisticsPage() {
+  const params = useParams();
+  const matchId = params.matchId as string;
+
+  const [match, setMatch] = useState<(Match & { innings: Innings[] }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!matchId) return;
+    setLoading(true);
+    fetch(`/api/matches/${matchId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch match");
+        return res.json();
+      })
+      .then((data) => {
+        setMatch(data.match);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [matchId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <Loader2 className="w-8 h-8 text-accent animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <p className="text-danger text-sm">{error}</p>
+      </div>
+    );
+  }
+
+  if (!match || !match.innings || match.innings.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[400px] text-center">
+        <BarChart3 className="w-12 h-12 text-muted/40 mb-4" />
+        <p className="text-muted text-sm">
+          No statistics available yet. Statistics will appear once the match has innings data.
+        </p>
+      </div>
+    );
+  }
+
+  const stats = computeStats(match as Parameters<typeof computeStats>[0]);
+
   return (
     <motion.div
       variants={containerVariants}
@@ -155,221 +210,136 @@ export default function StatisticsPage() {
           <TrendingUp className="w-5 h-5 text-accent" />
           <h3 className="font-semibold text-white">Run Rate</h3>
         </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={runRateData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="over" stroke="#94A3B8" fontSize={12} />
-            <YAxis stroke="#94A3B8" fontSize={12} />
-            <Tooltip content={<CustomTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="runRate"
-              stroke="#00D4FF"
-              strokeWidth={2}
-              dot={{ fill: "#00D4FF", r: 3 }}
-              name="CRR"
-            />
-            <Line
-              type="monotone"
-              dataKey="target"
-              stroke="#EF4444"
-              strokeWidth={1}
-              strokeDasharray="5 5"
-              dot={false}
-              name="RRR"
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        {stats.runRateData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={stats.runRateData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="over" stroke="#94A3B8" fontSize={12} />
+              <YAxis stroke="#94A3B8" fontSize={12} />
+              <Tooltip content={<CustomTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="runRate"
+                stroke="#00D4FF"
+                strokeWidth={2}
+                dot={{ fill: "#00D4FF", r: 3 }}
+                name="CRR"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[250px] text-muted text-sm">
+            No over data available
+          </div>
+        )}
       </motion.div>
 
-      <motion.div
-        variants={itemVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold text-white">Partnerships</h3>
-        </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={partnershipData} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis type="number" stroke="#94A3B8" fontSize={12} />
-            <YAxis type="category" dataKey="partnership" stroke="#94A3B8" fontSize={12} />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="runs" fill="#2563EB" radius={[0, 6, 6, 0]} name="Runs" />
-          </BarChart>
-        </ResponsiveContainer>
-      </motion.div>
+      <ComingSoonCard
+        title="Partnerships"
+        icon={<BarChart3 className="w-5 h-5 text-primary" />}
+      />
 
-      <motion.div
-        variants={itemVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp className="w-5 h-5 text-success" />
-          <h3 className="font-semibold text-white">Match Worm</h3>
-        </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={wormData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="over" stroke="#94A3B8" fontSize={12} />
-            <YAxis stroke="#94A3B8" fontSize={12} />
-            <Tooltip content={<CustomTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="mi"
-              stroke="#2563EB"
-              fill="rgba(37,99,235,0.1)"
-              strokeWidth={2}
-              name="MI"
-            />
-            <Area
-              type="monotone"
-              dataKey="csk"
-              stroke="#00D4FF"
-              fill="rgba(0,212,255,0.1)"
-              strokeWidth={2}
-              name="CSK"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </motion.div>
+      <ComingSoonCard
+        title="Match Worm"
+        icon={<TrendingUp className="w-5 h-5 text-success" />}
+      />
 
-      <motion.div
-        variants={itemVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="w-5 h-5 text-warning" />
-          <h3 className="font-semibold text-white">Manhattan</h3>
-        </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={manhattanData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="over" stroke="#94A3B8" fontSize={12} />
-            <YAxis stroke="#94A3B8" fontSize={12} />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="mi" fill="#2563EB" radius={[4, 4, 0, 0]} name="MI" />
-            <Bar dataKey="csk" fill="#00D4FF" radius={[4, 4, 0, 0]} name="CSK" />
-          </BarChart>
-        </ResponsiveContainer>
-      </motion.div>
+      <ComingSoonCard
+        title="Manhattan"
+        icon={<BarChart3 className="w-5 h-5 text-warning" />}
+      />
 
       <div className="grid md:grid-cols-2 gap-6">
-        <motion.div
-          variants={itemVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <PieIcon className="w-5 h-5 text-accent" />
-            <h3 className="font-semibold text-white">Run Distribution</h3>
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie
-                data={runDistribution}
-                cx="50%"
-                cy="50%"
-                innerRadius={50}
-                outerRadius={80}
-                paddingAngle={3}
-                dataKey="value"
-              >
-                {runDistribution.map((entry, index) => (
-                  <Cell key={index} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip
-                content={({ active, payload }) =>
-                  active && payload && payload[0] ? (
-                    <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl p-2 text-xs text-white">
-                      {payload[0].name}: {payload[0].value}
-                    </div>
-                  ) : null
-                }
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex flex-wrap gap-3 mt-2">
-            {runDistribution.map((d) => (
-              <div key={d.name} className="flex items-center gap-1.5">
-                <div
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: d.color }}
-                />
-                <span className="text-xs text-muted">
-                  {d.name} ({d.value})
-                </span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-
-        <motion.div
-          variants={itemVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <Target className="w-5 h-5 text-danger" />
-            <h3 className="font-semibold text-white">Wagon Wheel</h3>
-          </div>
-          <div className="relative flex items-center justify-center">
-            <svg width="220" height="220" viewBox="-110 -110 220 220">
-              <circle cx="0" cy="0" r="100" fill="none" stroke="rgba(255,255,255,0.08)" />
-              <circle cx="0" cy="0" r="75" fill="none" stroke="rgba(255,255,255,0.06)" />
-              <circle cx="0" cy="0" r="50" fill="none" stroke="rgba(255,255,255,0.04)" />
-              <circle cx="0" cy="0" r="25" fill="none" stroke="rgba(255,255,255,0.03)" />
-              <line x1="0" y1="-100" x2="0" y2="100" stroke="rgba(255,255,255,0.05)" />
-              <line x1="-100" y1="0" x2="100" y2="0" stroke="rgba(255,255,255,0.05)" />
-              <line x1="-70" y1="-70" x2="70" y2="70" stroke="rgba(255,255,255,0.05)" />
-              <line x1="70" y1="-70" x2="-70" y2="70" stroke="rgba(255,255,255,0.05)" />
-              {wagonWheelData.map((d, i) => (
-                <circle
-                  key={i}
-                  cx={d.x}
-                  cy={d.y}
-                  r={4}
-                  fill={
-                    d.runs === 6
-                      ? "#00D4FF"
-                      : d.runs === 4
-                      ? "#2563EB"
-                      : d.runs === 0
-                      ? "#374151"
-                      : "#22C55E"
-                  }
-                  opacity={0.8}
-                />
-              ))}
-              <circle cx="0" cy="0" r="4" fill="#F59E0B" />
-            </svg>
-          </div>
-        </motion.div>
+        <ComingSoonCard
+          title="Run Distribution"
+          icon={<BarChart3 className="w-5 h-5 text-accent" />}
+        />
+        <ComingSoonCard
+          title="Wagon Wheel"
+          icon={<Target className="w-5 h-5 text-danger" />}
+        />
       </div>
 
       <motion.div
         variants={itemVariants}
         className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
       >
-        <h3 className="font-semibold text-white mb-4">Bowling Analysis</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {bowlingAnalysis.map((b) => (
-            <div
-              key={b.bowler}
-              className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center"
-            >
-              <p className="text-sm text-white font-medium mb-1">{b.bowler}</p>
-              <p className="text-lg font-bold text-danger">{b.wickets}</p>
-              <p className="text-xs text-muted">wickets</p>
-              <div className="mt-2 pt-2 border-t border-white/5">
-                <p className="text-xs text-muted">
-                  {b.runs} runs &middot; {b.dotBalls} dots
-                </p>
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-white">Quick Stats</h3>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-primary">{stats.totalFours}</p>
+            <p className="text-xs text-muted">Fours</p>
+          </div>
+          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-accent">{stats.totalSixes}</p>
+            <p className="text-xs text-muted">Sixes</p>
+          </div>
+          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-danger">{stats.totalWickets}</p>
+            <p className="text-xs text-muted">Wickets</p>
+          </div>
+          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-success">{stats.totalDots}</p>
+            <p className="text-xs text-muted">Dot Balls</p>
+          </div>
         </div>
       </motion.div>
+
+      {stats.battingStats.length > 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
+        >
+          <h3 className="font-semibold text-white mb-4">Top Batsmen</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {stats.battingStats.slice(0, 8).map((b) => (
+              <div
+                key={b.id}
+                className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center"
+              >
+                <p className="text-sm text-white font-medium mb-1">{b.playerName}</p>
+                <p className="text-lg font-bold text-accent">
+                  {b.runs}{" "}
+                  <span className="text-xs text-muted font-normal">
+                    ({b.balls}){b.isNotOut ? "*" : ""}
+                  </span>
+                </p>
+                <p className="text-xs text-muted">
+                  SR {b.strikeRate?.toFixed(1) || "0.0"} &middot; {b.fours}x4 {b.sixes}x6
+                </p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {stats.bowlingStats.length > 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
+        >
+          <h3 className="font-semibold text-white mb-4">Bowling Analysis</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {stats.bowlingStats.map((b) => (
+              <div
+                key={b.id}
+                className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center"
+              >
+                <p className="text-sm text-white font-medium mb-1">{b.playerName}</p>
+                <p className="text-lg font-bold text-danger">{b.wickets}</p>
+                <p className="text-xs text-muted">wickets</p>
+                <div className="mt-2 pt-2 border-t border-white/5">
+                  <p className="text-xs text-muted">
+                    {b.runs} runs &middot; {b.dotBalls} dots
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

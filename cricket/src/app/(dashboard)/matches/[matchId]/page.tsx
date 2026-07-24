@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, use } from "react";
 import { motion } from "framer-motion";
 import {
   Cloud,
@@ -16,13 +17,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import type { Match, Team, Innings } from "@/types";
 
-const officials = [
-  { role: "Umpire", name: "K. Dharmasena" },
-  { role: "Umpire", name: "M. Erasmus" },
-  { role: "Third Umpire", name: "P. Reiffel" },
-  { role: "Match Referee", name: "R. Ramaswamy" },
-];
+interface MatchWithDetails extends Match {
+  homeTeam: Pick<Team, "id" | "name" | "shortName" | "logo">;
+  awayTeam: Pick<Team, "id" | "name" | "shortName" | "logo">;
+  innings: (Innings & {
+    battingCard: { playerId: string; runs: number; balls: number }[];
+    bowlingCard: { playerId: string; overs: number; runs: number; wickets: number }[];
+    overs: { overNumber: number; totalRuns: number; totalWickets: number; ballsCount: number }[];
+  })[];
+  tournament?: { id: string; name: string } | null;
+}
 
 const quickActions = [
   {
@@ -68,7 +74,95 @@ const itemVariants = {
   show: { opacity: 1, y: 0 },
 };
 
-export default function MatchOverviewPage() {
+export default function MatchOverviewPage({
+  params,
+}: {
+  params: Promise<{ matchId: string }>;
+}) {
+  const { matchId } = use(params);
+  const [match, setMatch] = useState<MatchWithDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchMatch() {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch(`/api/matches/${matchId}`);
+        if (!res.ok) {
+          setError("Match not found");
+          return;
+        }
+        const data = await res.json();
+        setMatch(data.match);
+      } catch {
+        setError("Failed to load match data");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchMatch();
+  }, [matchId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !match) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <Trophy className="w-12 h-12 text-muted mb-4" />
+        <p className="text-white font-medium">{error || "Match not found"}</p>
+        <p className="text-sm text-muted mt-1">
+          The match you are looking for does not exist or has been removed.
+        </p>
+      </div>
+    );
+  }
+
+  const isLive = match.status === "LIVE";
+  const currentInnings =
+    isLive && match.innings.length > 0
+      ? match.innings[match.innings.length - 1]
+      : null;
+
+  const currentRunRate =
+    currentInnings && currentInnings.totalOvers > 0
+      ? (currentInnings.totalRuns / currentInnings.totalOvers).toFixed(2)
+      : null;
+
+  const officials = [
+    match.umpire1 && { role: "Umpire", name: match.umpire1 },
+    match.umpire2 && { role: "Umpire", name: match.umpire2 },
+    match.thirdUmpire && { role: "Third Umpire", name: match.thirdUmpire },
+    match.matchReferee && { role: "Match Referee", name: match.matchReferee },
+  ].filter(Boolean) as { role: string; name: string }[];
+
+  const tossText = match.tossWinner
+    ? `${match.tossWinner} won the toss`
+    : "Toss pending";
+
+  const tossDecisionText = match.tossDecision
+    ? match.tossDecision === "BAT"
+      ? "Elected to bat first"
+      : "Elected to bowl first"
+    : "";
+
+  const scheduledDate = match.scheduledAt
+    ? new Date(match.scheduledAt).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
+
   return (
     <motion.div
       variants={containerVariants}
@@ -82,47 +176,72 @@ export default function MatchOverviewPage() {
       >
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/10" />
         <div className="relative flex flex-col items-center text-center">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success bg-success/15 px-3 py-1 rounded-full mb-4">
-            <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            LIVE
-          </span>
+          {isLive && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success bg-success/15 px-3 py-1 rounded-full mb-4">
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              LIVE
+            </span>
+          )}
+          {!isLive && match.status === "COMPLETED" && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 px-3 py-1 rounded-full mb-4">
+              COMPLETED
+            </span>
+          )}
+          {!isLive && match.status === "SCHEDULED" && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent bg-accent/15 px-3 py-1 rounded-full mb-4">
+              {scheduledDate}
+            </span>
+          )}
           <div className="flex items-center gap-8 mb-4">
             <div className="text-center">
               <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-2xl font-bold text-white mb-2">
-                MI
+                {match.homeTeam.shortName}
               </div>
-              <p className="text-sm text-muted">Mumbai Indians</p>
+              <p className="text-sm text-muted">{match.homeTeam.name}</p>
             </div>
             <div className="text-center">
-              <p className="text-6xl font-bold gradient-text leading-none mb-1">
-                156/4
-              </p>
-              <p className="text-lg text-white/70">
-                <span className="text-muted">Overs:</span>{" "}
-                <span className="text-white font-semibold">15.3</span>
-              </p>
+              {currentInnings ? (
+                <>
+                  <p className="text-6xl font-bold gradient-text leading-none mb-1">
+                    {currentInnings.totalRuns}/{currentInnings.totalWickets}
+                  </p>
+                  <p className="text-lg text-white/70">
+                    <span className="text-muted">Overs:</span>{" "}
+                    <span className="text-white font-semibold">
+                      {currentInnings.totalOvers}
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <p className="text-4xl font-bold gradient-text leading-none">
+                  vs
+                </p>
+              )}
             </div>
             <div className="text-center">
               <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-2xl font-bold text-white mb-2">
-                CSK
+                {match.awayTeam.shortName}
               </div>
-              <p className="text-sm text-muted">Chennai Super Kings</p>
+              <p className="text-sm text-muted">{match.awayTeam.name}</p>
             </div>
           </div>
-          <div className="flex items-center gap-6 mt-2">
-            <div className="text-center">
-              <p className="text-xs text-muted">CRR</p>
-              <p className="text-accent font-bold">10.06</p>
+          {currentInnings && (
+            <div className="flex items-center gap-6 mt-2">
+              <div className="text-center">
+                <p className="text-xs text-muted">CRR</p>
+                <p className="text-accent font-bold">{currentRunRate ?? "0.00"}</p>
+              </div>
+              {currentInnings.targetScore && (
+                <div className="text-center">
+                  <p className="text-xs text-muted">Target</p>
+                  <p className="text-white font-bold">{currentInnings.targetScore}</p>
+                </div>
+              )}
             </div>
-            <div className="text-center">
-              <p className="text-xs text-muted">RRR</p>
-              <p className="text-warning font-bold">8.72</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-muted">Target</p>
-              <p className="text-white font-bold">175</p>
-            </div>
-          </div>
+          )}
+          {match.result && (
+            <p className="text-sm text-muted mt-3">{match.result}</p>
+          )}
         </div>
       </motion.div>
 
@@ -132,7 +251,7 @@ export default function MatchOverviewPage() {
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
-              <Link key={action.label} href={`/matches/1/${action.href}`}>
+              <Link key={action.label} href={`/matches/${matchId}/${action.href}`}>
                 <motion.div
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -165,10 +284,10 @@ export default function MatchOverviewPage() {
             <Trophy className="w-5 h-5 text-warning" />
             <h3 className="text-sm font-medium text-white">Toss</h3>
           </div>
-          <p className="text-white font-semibold">
-            Mumbai Indians won the toss
-          </p>
-          <p className="text-sm text-muted mt-1">Elected to bat first</p>
+          <p className="text-white font-semibold">{tossText}</p>
+          {tossDecisionText && (
+            <p className="text-sm text-muted mt-1">{tossDecisionText}</p>
+          )}
         </motion.div>
 
         <motion.div
@@ -179,8 +298,10 @@ export default function MatchOverviewPage() {
             <MapPin className="w-5 h-5 text-primary" />
             <h3 className="text-sm font-medium text-white">Venue</h3>
           </div>
-          <p className="text-white font-semibold">Wankhede Stadium</p>
-          <p className="text-sm text-muted mt-1">Mumbai, Maharashtra</p>
+          <p className="text-white font-semibold">{match.venue || "TBD"}</p>
+          {scheduledDate && (
+            <p className="text-sm text-muted mt-1">{scheduledDate}</p>
+          )}
         </motion.div>
 
         <motion.div
@@ -192,15 +313,10 @@ export default function MatchOverviewPage() {
             <h3 className="text-sm font-medium text-white">Weather</h3>
           </div>
           <div className="flex items-center gap-4">
-            <div>
-              <p className="text-white font-semibold">28°C</p>
-              <p className="text-sm text-muted">Humidity 72%</p>
-            </div>
             <Wind className="w-4 h-4 text-white/30" />
-            <div>
-              <p className="text-sm text-white">Partly Cloudy</p>
-              <p className="text-sm text-muted">Wind: 12 km/h</p>
-            </div>
+            <p className="text-sm text-white">
+              {match.weather || "Not reported"}
+            </p>
           </div>
         </motion.div>
 
@@ -213,36 +329,37 @@ export default function MatchOverviewPage() {
             <h3 className="text-sm font-medium text-white">Pitch Report</h3>
           </div>
           <p className="text-sm text-white">
-            Flat track with good pace and bounce. Expecting high scores. Spin
-            may come into play in the second innings.
+            {match.pitchCondition || "Not reported"}
           </p>
         </motion.div>
 
-        <motion.div
-          variants={itemVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 md:col-span-2"
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <Users className="w-5 h-5 text-success" />
-            <h3 className="text-sm font-medium text-white">Officials</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {officials.map((o) => (
-              <div key={o.name} className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs text-muted font-medium">
-                  {o.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
+        {officials.length > 0 && (
+          <motion.div
+            variants={itemVariants}
+            className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 md:col-span-2"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Users className="w-5 h-5 text-success" />
+              <h3 className="text-sm font-medium text-white">Officials</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {officials.map((o) => (
+                <div key={o.name} className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs text-muted font-medium">
+                    {o.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")}
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted">{o.role}</p>
+                    <p className="text-sm text-white">{o.name}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-muted">{o.role}</p>
-                  <p className="text-sm text-white">{o.name}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </div>
     </motion.div>
   );

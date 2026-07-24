@@ -1,19 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { PlusCircle, Search, Calendar, Users, Trophy } from "lucide-react";
 import { cn, generateInitials } from "@/lib/utils";
 
-const mockTournaments = [
-  { id: "1", name: "IPL 2026", teams: 10, dates: "Mar 22 - May 28", status: "completed", color: "from-primary to-accent" },
-  { id: "2", name: "World Cup Qualifier", teams: 12, dates: "Jul 1 - Jul 15", status: "live", color: "from-success to-accent" },
-  { id: "3", name: "County Championship", teams: 18, dates: "Aug 1 - Sep 30", status: "upcoming", color: "from-purple-500 to-purple-700" },
-  { id: "4", name: "The Ashes", teams: 2, dates: "Nov 21 - Jan 8", status: "upcoming", color: "from-warning to-danger" },
-  { id: "5", name: "Caribbean Premier League", teams: 6, dates: "Aug 14 - Sep 22", status: "upcoming", color: "from-orange-400 to-orange-600" },
-  { id: "6", name: "Big Bash League", teams: 8, dates: "Dec 15 - Feb 4", status: "upcoming", color: "from-sky-400 to-sky-600" },
-];
+interface Tournament {
+  id: string;
+  name: string;
+  shortName?: string;
+  format: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  _count?: { matches: number; teams: number };
+}
+
+interface TournamentsResponse {
+  tournaments: Tournament[];
+  pagination: { total: number; page: number; limit: number; totalPages: number };
+}
 
 const container = {
   hidden: { opacity: 0 },
@@ -27,10 +34,32 @@ const item = {
 
 export default function TournamentsPage() {
   const [search, setSearch] = useState("");
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = mockTournaments.filter((t) =>
-    t.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const fetchTournaments = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: "1", limit: "50" });
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/tournaments?${params}`);
+      if (res.ok) {
+        const data: TournamentsResponse = await res.json();
+        setTournaments(data.tournaments);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  useEffect(() => {
+    const timer = setTimeout(fetchTournaments, 300);
+    return () => clearTimeout(timer);
+  }, [fetchTournaments]);
+
+  const formatDate = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -58,60 +87,88 @@ export default function TournamentsPage() {
         </div>
       </motion.div>
 
-      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((tournament) => (
-          <motion.div key={tournament.id} variants={item}>
-            <div className="glass-card group rounded-2xl p-5">
+      {loading ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="glass-card animate-pulse rounded-2xl p-5">
               <div className="flex items-start gap-4">
-                <div className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-bold text-white", tournament.color)}>
-                  {generateInitials(tournament.name)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="truncate font-semibold text-foreground">{tournament.name}</h3>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {tournament.status === "live" ? (
-                      <span className="flex items-center gap-1 text-xs font-semibold text-success">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
-                        </span>
-                        Live
-                      </span>
-                    ) : tournament.status === "upcoming" ? (
-                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                        Upcoming
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-muted/10 px-2 py-0.5 text-[10px] font-semibold text-muted">
-                        Completed
-                      </span>
-                    )}
-                  </div>
+                <div className="h-14 w-14 shrink-0 rounded-xl bg-white/5" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-3/4 rounded bg-white/5" />
+                  <div className="h-3 w-1/2 rounded bg-white/5" />
                 </div>
               </div>
-
-              <div className="mt-4 flex items-center gap-4 border-t border-white/5 pt-3">
-                <span className="flex items-center gap-1.5 text-xs text-muted">
-                  <Users className="h-3 w-3" />
-                  {tournament.teams} teams
-                </span>
-                <span className="flex items-center gap-1.5 text-xs text-muted">
-                  <Calendar className="h-3 w-3" />
-                  {tournament.dates}
-                </span>
+              <div className="mt-4 border-t border-white/5 pt-3">
+                <div className="h-3 w-2/3 rounded bg-white/5" />
               </div>
             </div>
-          </motion.div>
-        ))}
-      </motion.div>
+          ))}
+        </div>
+      ) : (
+        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {tournaments.map((tournament) => (
+            <motion.div key={tournament.id} variants={item}>
+              <Link href={`/tournaments/${tournament.id}`} className="block glass-card group rounded-2xl p-5 transition-all hover:ring-1 hover:ring-primary/30">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-sm font-bold text-white">
+                    {tournament.shortName || generateInitials(tournament.name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="truncate font-semibold text-foreground">{tournament.name}</h3>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-muted">
+                        {tournament.format}
+                      </span>
+                      {tournament.status === "live" || tournament.status === "in_progress" ? (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-success">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                          </span>
+                          Live
+                        </span>
+                      ) : tournament.status === "upcoming" ? (
+                        <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                          Upcoming
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-muted/10 px-2 py-0.5 text-[10px] font-semibold text-muted">
+                          Completed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-      {filtered.length === 0 && (
+                <div className="mt-4 flex items-center gap-4 border-t border-white/5 pt-3">
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <Users className="h-3 w-3" />
+                    {tournament._count?.teams ?? 0} teams
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <Trophy className="h-3 w-3" />
+                    {tournament._count?.matches ?? 0} matches
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <Calendar className="h-3 w-3" />
+                    {formatDate(tournament.startDate)} – {formatDate(tournament.endDate)}
+                  </span>
+                </div>
+              </Link>
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
+
+      {!loading && tournaments.length === 0 && (
         <motion.div variants={item} className="flex flex-col items-center justify-center py-16 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
             <Trophy className="h-8 w-8 text-muted" />
           </div>
-          <p className="mt-4 text-sm font-medium text-foreground">No tournaments found</p>
-          <p className="text-xs text-muted">Try adjusting your search</p>
+          <p className="mt-4 text-sm font-medium text-foreground">No tournaments found. Create your first tournament!</p>
+          <Link href="/tournaments/create" className="mt-3 text-xs font-semibold text-primary hover:underline">
+            + Create Tournament
+          </Link>
         </motion.div>
       )}
     </motion.div>

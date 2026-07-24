@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -16,14 +17,22 @@ import {
   Clock,
   Swords,
   ChevronDown,
+  Loader2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface Team {
+  id: string;
+  name: string;
+  shortName?: string;
+}
 
 interface Player {
   id: string;
   name: string;
   role: string;
+  teamId?: string;
 }
 
 interface MatchFormData {
@@ -40,6 +49,8 @@ interface MatchFormData {
   tossWinner: string;
   tossDecision: "bat" | "bowl";
   umpires: string[];
+  description: string;
+  tournamentId: string;
 }
 
 const STEPS = [
@@ -50,22 +61,25 @@ const STEPS = [
   { id: 5, label: "Review", icon: ClipboardCheck },
 ];
 
-const DUMMY_PLAYERS: Player[] = [
-  { id: "1", name: "Virat Kohli", role: "Batsman" },
-  { id: "2", name: "Rohit Sharma", role: "Batsman" },
-  { id: "3", name: "Jasprit Bumrah", role: "Bowler" },
-  { id: "4", name: "Ravindra Jadeja", role: "All-rounder" },
-  { id: "5", name: "KL Rahul", role: "Wicketkeeper" },
-  { id: "6", name: "Hardik Pandya", role: "All-rounder" },
-  { id: "7", name: "Mohammed Shami", role: "Bowler" },
-  { id: "8", name: "Shubman Gill", role: "Batsman" },
-  { id: "9", name: "Suryakumar Yadav", role: "Batsman" },
-  { id: "10", name: "Axar Patel", role: "All-rounder" },
-  { id: "11", name: "Yuzvendra Chahal", role: "Bowler" },
-];
+const FORMAT_OVERS: Record<string, number> = {
+  T20: 20,
+  ODI: 50,
+  T10: 10,
+};
 
 export default function CreateMatchPage() {
+  const router = useRouter();
   const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(true);
+
+  const [playersA, setPlayersA] = useState<Player[]>([]);
+  const [playersB, setPlayersB] = useState<Player[]>([]);
+  const [playersALoading, setPlayersALoading] = useState(false);
+  const [playersBLoading, setPlayersBLoading] = useState(false);
+
   const [formData, setFormData] = useState<MatchFormData>({
     matchName: "",
     format: "T20",
@@ -80,10 +94,71 @@ export default function CreateMatchPage() {
     tossWinner: "",
     tossDecision: "bat",
     umpires: [],
+    description: "",
+    tournamentId: "",
   });
+
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        setTeamsLoading(true);
+        const res = await fetch("/api/teams?limit=100");
+        if (res.ok) {
+          const data = await res.json();
+          setTeams(data.teams ?? data ?? []);
+        }
+      } catch {
+        console.error("Failed to fetch teams");
+      } finally {
+        setTeamsLoading(false);
+      }
+    };
+    fetchTeams();
+  }, []);
+
+  const fetchPlayers = useCallback(async (teamId: string, side: "A" | "B") => {
+    const setter = side === "A" ? setPlayersA : setPlayersB;
+    const loadingSetter = side === "A" ? setPlayersALoading : setPlayersBLoading;
+    try {
+      loadingSetter(true);
+      setter([]);
+      const res = await fetch(`/api/players?teamId=${teamId}&limit=100`);
+      if (res.ok) {
+        const data = await res.json();
+        setter(data.players ?? data ?? []);
+      }
+    } catch {
+      console.error(`Failed to fetch players for team ${side}`);
+    } finally {
+      loadingSetter(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (formData.teamA) {
+      fetchPlayers(formData.teamA, "A");
+      setFormData((prev) => ({ ...prev, playersA: [] }));
+    }
+  }, [formData.teamA, fetchPlayers]);
+
+  useEffect(() => {
+    if (formData.teamB) {
+      fetchPlayers(formData.teamB, "B");
+      setFormData((prev) => ({ ...prev, playersB: [] }));
+    }
+  }, [formData.teamB, fetchPlayers]);
 
   const updateForm = (field: keyof MatchFormData, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleFormatChange = (format: string) => {
+    const f = format as MatchFormData["format"];
+    setFormData((prev) => ({
+      ...prev,
+      format: f,
+      overs: FORMAT_OVERS[f] ?? prev.overs,
+    }));
   };
 
   const togglePlayer = (team: "A" | "B", playerId: string) => {
@@ -111,15 +186,66 @@ export default function CreateMatchPage() {
       case 1:
         return formData.matchName && formData.date && formData.venue;
       case 2:
-        return formData.teamA && formData.teamB;
+        return formData.teamA && formData.teamB && formData.teamA !== formData.teamB;
       case 3:
         return formData.playersA.length >= 2 && formData.playersB.length >= 2;
       case 4:
-        return formData.umpires.length >= 1;
+        return true;
       default:
         return true;
     }
   };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const scheduledAt =
+        formData.date && formData.time
+          ? new Date(`${formData.date}T${formData.time}`).toISOString()
+          : formData.date
+          ? new Date(`${formData.date}T00:00:00`).toISOString()
+          : undefined;
+
+      const payload: Record<string, unknown> = {
+        name: formData.matchName,
+        format: formData.format,
+        totalOvers: formData.overs,
+        scheduledAt,
+        homeTeamId: formData.teamA,
+        awayTeamId: formData.teamB,
+        venue: formData.venue,
+        tossWinner: formData.tossWinner || undefined,
+        tossDecision: formData.tossDecision,
+        description: formData.description || undefined,
+        tournamentId: formData.tournamentId || undefined,
+        playerIds: {
+          teamA: formData.playersA,
+          teamB: formData.playersB,
+        },
+        umpires: formData.umpires,
+      };
+
+      const res = await fetch("/api/matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        router.push(`/matches/${data.id ?? data.match?.id ?? ""}`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.message ?? "Failed to create match");
+      }
+    } catch {
+      alert("Something went wrong while creating the match");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const teamName = (id: string) => teams.find((t) => t.id === id)?.name ?? "Unknown";
 
   return (
     <div className="min-h-screen p-4 md:p-8">
@@ -234,7 +360,7 @@ export default function CreateMatchPage() {
                       <div className="relative">
                         <select
                           value={formData.format}
-                          onChange={(e) => updateForm("format", e.target.value)}
+                          onChange={(e) => handleFormatChange(e.target.value)}
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
                         >
                           <option value="T20" className="bg-background">
@@ -307,6 +433,18 @@ export default function CreateMatchPage() {
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-primary transition-colors"
                       />
                     </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm text-muted mb-2">
+                        Description (optional)
+                      </label>
+                      <textarea
+                        value={formData.description}
+                        onChange={(e) => updateForm("description", e.target.value)}
+                        placeholder="Add any notes about this match..."
+                        rows={2}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-primary transition-colors resize-none"
+                      />
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -322,52 +460,93 @@ export default function CreateMatchPage() {
                   <h2 className="text-xl font-semibold text-white mb-4">
                     Select Teams
                   </h2>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm text-muted mb-2">
-                        Team A
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.teamA}
-                        onChange={(e) => updateForm("teamA", e.target.value)}
-                        placeholder="Enter team name"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-primary transition-colors"
-                      />
+                  {teamsLoading ? (
+                    <div className="flex items-center justify-center py-16 gap-3 text-muted">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Loading teams...
                     </div>
-                    <div>
-                      <label className="block text-sm text-muted mb-2">
-                        Team B
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.teamB}
-                        onChange={(e) => updateForm("teamB", e.target.value)}
-                        placeholder="Enter team name"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-primary transition-colors"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
-                      <Swords className="w-8 h-8 text-primary mx-auto mb-2" />
-                      <p className="text-white font-medium">
-                        {formData.teamA || "Team A"}
-                      </p>
-                      <p className="text-sm text-muted">
-                        {formData.playersA.length} players
+                  ) : teams.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Swords className="w-12 h-12 text-muted mx-auto mb-3 opacity-50" />
+                      <p className="text-muted mb-2">No teams found</p>
+                      <p className="text-sm text-white/30">
+                        Create some teams first before setting up a match.
                       </p>
                     </div>
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
-                      <Swords className="w-8 h-8 text-accent mx-auto mb-2" />
-                      <p className="text-white font-medium">
-                        {formData.teamB || "Team B"}
-                      </p>
-                      <p className="text-sm text-muted">
-                        {formData.playersB.length} players
-                      </p>
-                    </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm text-muted mb-2">
+                            Home Team
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={formData.teamA}
+                              onChange={(e) => updateForm("teamA", e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
+                            >
+                              <option value="" className="bg-background">
+                                Select home team
+                              </option>
+                              {teams.map((team) => (
+                                <option key={team.id} value={team.id} className="bg-background">
+                                  {team.name}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-muted mb-2">
+                            Away Team
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={formData.teamB}
+                              onChange={(e) => updateForm("teamB", e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
+                            >
+                              <option value="" className="bg-background">
+                                Select away team
+                              </option>
+                              {teams
+                                .filter((t) => t.id !== formData.teamA)
+                                .map((team) => (
+                                  <option key={team.id} value={team.id} className="bg-background">
+                                    {team.name}
+                                  </option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
+                          </div>
+                        </div>
+                      </div>
+                      {(formData.teamA || formData.teamB) && (
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                          <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                            <Swords className="w-8 h-8 text-primary mx-auto mb-2" />
+                            <p className="text-white font-medium">
+                              {formData.teamA ? teamName(formData.teamA) : "Home Team"}
+                            </p>
+                            <p className="text-sm text-muted">
+                              {playersA.length} players available
+                            </p>
+                          </div>
+                          <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                            <Swords className="w-8 h-8 text-accent mx-auto mb-2" />
+                            <p className="text-white font-medium">
+                              {formData.teamB ? teamName(formData.teamB) : "Away Team"}
+                            </p>
+                            <p className="text-sm text-muted">
+                              {playersB.length} players available
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </motion.div>
               )}
 
@@ -383,56 +562,74 @@ export default function CreateMatchPage() {
                     Select Players
                   </h2>
                   <div className="grid md:grid-cols-2 gap-6">
-                    {(["A", "B"] as const).map((team) => (
-                      <div key={team}>
-                        <h3 className="text-sm font-medium text-muted mb-3">
-                          {team === "A" ? formData.teamA || "Team A" : formData.teamB || "Team B"}{" "}
-                          — Select 11
-                        </h3>
-                        <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-                          {DUMMY_PLAYERS.map((player) => {
-                            const selected =
-                              team === "A"
-                                ? formData.playersA.includes(player.id)
-                                : formData.playersB.includes(player.id);
-                            return (
-                              <motion.button
-                                key={player.id}
-                                whileTap={{ scale: 0.97 }}
-                                onClick={() => togglePlayer(team, player.id)}
-                                className={cn(
-                                  "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
-                                  selected
-                                    ? "bg-primary/20 border-primary"
-                                    : "bg-white/5 border-white/10 hover:bg-white/8"
-                                )}
-                              >
-                                <div
-                                  className={cn(
-                                    "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
-                                    selected
-                                      ? "border-primary bg-primary"
-                                      : "border-white/20"
-                                  )}
-                                >
-                                  {selected && (
-                                    <Check className="w-3 h-3 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="text-white text-sm">
-                                    {player.name}
-                                  </p>
-                                  <p className="text-xs text-muted">
-                                    {player.role}
-                                  </p>
-                                </div>
-                              </motion.button>
-                            );
-                          })}
+                    {(["A", "B"] as const).map((team) => {
+                      const teamId = team === "A" ? formData.teamA : formData.teamB;
+                      const players = team === "A" ? playersA : playersB;
+                      const loading = team === "A" ? playersALoading : playersBLoading;
+                      const selected = team === "A" ? formData.playersA : formData.playersB;
+
+                      return (
+                        <div key={team}>
+                          <h3 className="text-sm font-medium text-muted mb-3">
+                            {teamId ? teamName(teamId) : team === "A" ? "Home Team" : "Away Team"}{" "}
+                            — Select 11
+                          </h3>
+                          {loading ? (
+                            <div className="flex items-center justify-center py-12 gap-2 text-muted">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Loading players...
+                            </div>
+                          ) : players.length === 0 ? (
+                            <div className="text-center py-12 bg-white/5 border border-white/10 rounded-xl">
+                              <Users className="w-8 h-8 text-muted mx-auto mb-2 opacity-50" />
+                              <p className="text-sm text-muted">
+                                {teamId ? "No players found for this team" : "Select a team first"}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                              {players.map((player) => {
+                                const isSelected = selected.includes(player.id);
+                                return (
+                                  <motion.button
+                                    key={player.id}
+                                    whileTap={{ scale: 0.97 }}
+                                    onClick={() => togglePlayer(team, player.id)}
+                                    className={cn(
+                                      "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                                      isSelected
+                                        ? "bg-primary/20 border-primary"
+                                        : "bg-white/5 border-white/10 hover:bg-white/8"
+                                    )}
+                                  >
+                                    <div
+                                      className={cn(
+                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                                        isSelected
+                                          ? "border-primary bg-primary"
+                                          : "border-white/20"
+                                      )}
+                                    >
+                                      {isSelected && (
+                                        <Check className="w-3 h-3 text-white" />
+                                      )}
+                                    </div>
+                                    <div>
+                                      <p className="text-white text-sm">
+                                        {player.name}
+                                      </p>
+                                      <p className="text-xs text-muted">
+                                        {player.role}
+                                      </p>
+                                    </div>
+                                  </motion.button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </motion.div>
               )}
@@ -464,12 +661,16 @@ export default function CreateMatchPage() {
                           <option value="" className="bg-background">
                             Select team
                           </option>
-                          <option value={formData.teamA} className="bg-background">
-                            {formData.teamA || "Team A"}
-                          </option>
-                          <option value={formData.teamB} className="bg-background">
-                            {formData.teamB || "Team B"}
-                          </option>
+                          {formData.teamA && (
+                            <option value={formData.teamA} className="bg-background">
+                              {teamName(formData.teamA)}
+                            </option>
+                          )}
+                          {formData.teamB && (
+                            <option value={formData.teamB} className="bg-background">
+                              {teamName(formData.teamB)}
+                            </option>
+                          )}
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
                       </div>
@@ -499,46 +700,42 @@ export default function CreateMatchPage() {
                   </div>
                   <div>
                     <label className="block text-sm text-muted mb-2">
-                      Umpires
+                      Umpires (enter names)
                     </label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {[
-                        "K. Dharmasena",
-                        "M. Erasmus",
-                        "P. Reiffel",
-                        "R. Tucker",
-                        "N. Llong",
-                        "S. Fry",
-                      ].map((umpire) => {
-                        const selected = formData.umpires.includes(umpire);
-                        return (
+                    <div className="space-y-3">
+                      {formData.umpires.map((umpire, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={umpire}
+                            onChange={(e) => {
+                              const updated = [...formData.umpires];
+                              updated[idx] = e.target.value;
+                              updateForm("umpires", updated);
+                            }}
+                            placeholder={`Umpire ${idx + 1}`}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-primary transition-colors"
+                          />
                           <motion.button
-                            key={umpire}
-                            whileTap={{ scale: 0.97 }}
-                            onClick={() => toggleUmpire(umpire)}
-                            className={cn(
-                              "flex items-center gap-2 p-3 rounded-xl border text-sm transition-all",
-                              selected
-                                ? "bg-primary/20 border-primary text-white"
-                                : "bg-white/5 border-white/10 text-muted"
-                            )}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              const updated = formData.umpires.filter((_, i) => i !== idx);
+                              updateForm("umpires", updated);
+                            }}
+                            className="p-3 rounded-xl bg-white/5 border border-white/10 text-muted hover:text-red-400 hover:border-red-400/50 transition-colors"
                           >
-                            <div
-                              className={cn(
-                                "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                                selected
-                                  ? "border-primary bg-primary"
-                                  : "border-white/20"
-                              )}
-                            >
-                              {selected && (
-                                <Check className="w-2.5 h-2.5 text-white" />
-                              )}
-                            </div>
-                            {umpire}
+                            <X className="w-4 h-4" />
                           </motion.button>
-                        );
-                      })}
+                        </div>
+                      ))}
+                      <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => updateForm("umpires", [...formData.umpires, ""])}
+                        className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-white/10 text-sm text-muted hover:text-white hover:border-white/20 transition-colors w-full justify-center"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Umpire
+                      </motion.button>
                     </div>
                   </div>
                 </motion.div>
@@ -571,7 +768,7 @@ export default function CreateMatchPage() {
                       { label: "Venue", value: formData.venue || "Not set" },
                       {
                         label: "Teams",
-                        value: `${formData.teamA || "TBA"} vs ${formData.teamB || "TBA"}`,
+                        value: `${formData.teamA ? teamName(formData.teamA) : "TBA"} vs ${formData.teamB ? teamName(formData.teamB) : "TBA"}`,
                       },
                       {
                         label: "Players",
@@ -580,14 +777,14 @@ export default function CreateMatchPage() {
                       {
                         label: "Toss",
                         value: formData.tossWinner
-                          ? `${formData.tossWinner} chose to ${formData.tossDecision}`
+                          ? `${teamName(formData.tossWinner)} chose to ${formData.tossDecision}`
                           : "Not set",
                       },
                       {
                         label: "Umpires",
                         value:
-                          formData.umpires.length > 0
-                            ? formData.umpires.join(", ")
+                          formData.umpires.filter(Boolean).length > 0
+                            ? formData.umpires.filter(Boolean).join(", ")
                             : "Not set",
                       },
                     ].map((item) => (
@@ -596,7 +793,7 @@ export default function CreateMatchPage() {
                         className="flex justify-between items-center py-3 border-b border-white/5"
                       >
                         <span className="text-muted">{item.label}</span>
-                        <span className="text-white font-medium">
+                        <span className="text-white font-medium text-right">
                           {item.value}
                         </span>
                       </div>
@@ -641,10 +838,19 @@ export default function CreateMatchPage() {
             ) : (
               <motion.button
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium bg-success text-white hover:bg-success/80 transition-all"
+                onClick={handleSubmit}
+                disabled={submitting}
+                className={cn(
+                  "flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium bg-success text-white hover:bg-success/80 transition-all",
+                  submitting && "opacity-70 cursor-not-allowed"
+                )}
               >
-                <Plus className="w-4 h-4" />
-                Create Match
+                {submitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                {submitting ? "Creating..." : "Create Match"}
               </motion.button>
             )}
           </div>

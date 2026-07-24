@@ -20,7 +20,10 @@ export async function GET(
           include: { player: { select: { id: true, name: true } } },
           orderBy: { wickets: 'desc' }
         },
-        overs: { orderBy: { overNumber: 'asc' } },
+        overs: {
+          orderBy: { overNumber: 'asc' },
+          include: { balls: { orderBy: { ballNumber: 'asc' } } }
+        },
         fallOfWickets: { orderBy: { wicketNumber: 'asc' } },
       },
       orderBy: { inningsNumber: 'asc' }

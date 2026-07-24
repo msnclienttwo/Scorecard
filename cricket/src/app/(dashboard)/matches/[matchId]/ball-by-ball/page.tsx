@@ -1,57 +1,143 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { Loader2 } from "lucide-react";
 
-interface Ball {
-  id: number;
-  over: number;
-  ball: number;
+interface BallData {
+  id: string;
+  ballNumber: number;
   runs: number;
-  extras: string | null;
+  isExtra: boolean;
+  extraType: string | null;
   isWicket: boolean;
-  batsman: string;
-  bowler: string;
-  description: string;
+  wicketType: string | null;
+  description: string | null;
+  bowlerId: string;
+  batsmanId: string;
+  ballResult: string;
 }
 
-const allBalls: Ball[] = [
-  { id: 1, over: 0, ball: 1, runs: 1, extras: null, isWicket: false, batsman: "Rohit Sharma", bowler: "Bumrah", description: "Rohit Sharma drives to mid-off, takes a quick single" },
-  { id: 2, over: 0, ball: 2, runs: 0, extras: null, isWicket: false, batsman: "Ishan Kishan", bowler: "Bumrah", description: "Good length outside off, left alone" },
-  { id: 3, over: 0, ball: 3, runs: 4, extras: null, isWicket: false, batsman: "Ishan Kishan", bowler: "Bumrah", description: "FOUR! Short and pulled over mid-wicket" },
-  { id: 4, over: 0, ball: 4, runs: 2, extras: null, isWicket: false, batsman: "Ishan Kishan", bowler: "Bumrah", description: "Flicked off the pads for two runs" },
-  { id: 5, over: 0, ball: 5, runs: 0, extras: null, isWicket: false, batsman: "Ishan Kishan", bowler: "Bumrah", description: "Full delivery, defended solidly" },
-  { id: 6, over: 0, ball: 6, runs: 1, extras: null, isWicket: false, batsman: "Ishan Kishan", bowler: "Bumrah", description: "Pushed to covers for a single" },
-  { id: 7, over: 1, ball: 1, runs: 6, extras: null, isWicket: false, batsman: "Rohit Sharma", bowler: "Chahar", description: "SIX! Massive hit over long-on!" },
-  { id: 8, over: 1, ball: 2, runs: 1, extras: null, isWicket: false, batsman: "Rohit Sharma", bowler: "Chahar", description: "Dabbed to third man for one" },
-  { id: 9, over: 1, ball: 3, runs: 0, extras: null, isWicket: true, batsman: "Rohit Sharma", bowler: "Chahar", description: "WICKET! Caught behind! Rohit goes for 48" },
-  { id: 10, over: 1, ball: 4, runs: 2, extras: null, isWicket: false, batsman: "Suryakumar Yadav", bowler: "Chahar", description: "Inside edge past the stumps for two" },
-  { id: 11, over: 1, ball: 5, runs: 4, extras: null, isWicket: false, batsman: "Suryakumar Yadav", bowler: "Chahar", description: "FOUR! Cover drive, pristine timing" },
-  { id: 12, over: 1, ball: 5, runs: 0, extras: "wd", isWicket: false, batsman: "Suryakumar Yadav", bowler: "Chahar", description: "Wide ball down the leg side" },
-  { id: 13, over: 1, ball: 6, runs: 1, extras: null, isWicket: false, batsman: "Suryakumar Yadav", bowler: "Chahar", description: "Worked to leg side for a single" },
-  { id: 14, over: 2, ball: 1, runs: 0, extras: null, isWicket: false, batsman: "Tilak Varma", bowler: "Jadeja", description: "Defended back to the bowler" },
-  { id: 15, over: 2, ball: 2, runs: 3, extras: null, isWicket: false, batsman: "Tilak Varma", bowler: "Jadeja", description: "Thick outside edge, races to third man" },
-  { id: 16, over: 2, ball: 3, runs: 1, extras: null, isWicket: false, batsman: "Suryakumar Yadav", bowler: "Jadeja", description: "Turned to mid-wicket for one" },
-  { id: 17, over: 2, ball: 4, runs: 6, extras: null, isWicket: false, batsman: "Suryakumar Yadav", bowler: "Jadeja", description: "SIX! Sky pulls it over cow corner!" },
-  { id: 18, over: 2, ball: 5, runs: 1, extras: null, isWicket: false, batsman: "Suryakumar Yadav", bowler: "Jadeja", description: "Quick single, good running" },
-  { id: 19, over: 2, ball: 6, runs: 0, extras: null, isWicket: false, batsman: "Tilak Varma", bowler: "Jadeja", description: "Dot ball, defended solidly on off stump" },
-];
+interface OverData {
+  id: string;
+  overNumber: number;
+  bowlerId: string;
+  totalRuns: number;
+  totalWickets: number;
+  ballsCount: number;
+  isCompleted: boolean;
+  balls: BallData[];
+}
 
-function getBallChipColor(ball: Ball): string {
-  if (ball.isWicket) return "bg-danger text-white";
-  if (ball.extras === "wd") return "bg-warning text-black";
-  if (ball.extras === "nb") return "bg-orange-500 text-white";
-  if (ball.runs === 6) return "bg-accent text-black";
-  if (ball.runs === 4) return "bg-primary text-white";
-  if (ball.runs === 0) return "bg-white/10 text-muted";
-  return "bg-success/20 text-success";
+interface PlayerEntry {
+  playerId: string;
+  player: { id: string; name: string };
+}
+
+interface InningsData {
+  id: string;
+  inningsNumber: number;
+  battingTeam: string;
+  bowlingTeam: string;
+  totalRuns: number;
+  totalWickets: number;
+  totalOvers: number;
+  overs: OverData[];
+  battingCard: PlayerEntry[];
+  bowlingCard: PlayerEntry[];
+}
+
+function getBallChipColor(ballResult: string): string {
+  switch (ballResult) {
+    case "FOUR":
+      return "bg-primary text-white";
+    case "SIX":
+      return "bg-accent text-black";
+    case "WIDE":
+      return "bg-warning text-black";
+    case "NO_BALL":
+      return "bg-orange-500 text-white";
+    case "DOT":
+      return "bg-white/10 text-muted";
+    case "BYE":
+    case "LEG_BYE":
+      return "bg-success/20 text-success";
+    default:
+      return "bg-white/10 text-muted";
+  }
+}
+
+function getBallChipLabel(ball: BallData): string {
+  if (ball.isWicket) return "W";
+  if (ball.extraType === "WIDE") return "WD";
+  if (ball.extraType === "NO_BALL") return "NB";
+  return String(ball.runs);
 }
 
 export default function BallByBallPage() {
-  const [hoveredBall, setHoveredBall] = useState<number | null>(null);
+  const params = useParams();
+  const matchId = params.matchId as string;
 
-  const overs = Array.from(new Set(allBalls.map((b) => b.over)));
+  const [innings, setInnings] = useState<InningsData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hoveredBall, setHoveredBall] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchInnings() {
+      try {
+        const res = await fetch(`/api/matches/${matchId}/innings`);
+        const data = await res.json();
+        setInnings(data.innings || []);
+      } catch {
+        console.error("Failed to fetch innings");
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (matchId) fetchInnings();
+  }, [matchId]);
+
+  if (loading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="space-y-4"
+      >
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-white mb-1">Ball-by-Ball</h2>
+          <p className="text-sm text-muted">Loading match data...</p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+        </div>
+      </motion.div>
+    );
+  }
+
+  const hasData = innings.some(
+    (inn) => inn.overs.length > 0 && inn.overs.some((o) => o.balls.length > 0)
+  );
+
+  if (!hasData) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="space-y-4"
+      >
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-white mb-1">Ball-by-Ball</h2>
+          <p className="text-sm text-muted">No ball-by-ball data available</p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <p className="text-muted text-sm">No ball-by-ball data available</p>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -59,101 +145,128 @@ export default function BallByBallPage() {
       animate={{ opacity: 1 }}
       className="space-y-4"
     >
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-        <h2 className="text-lg font-bold text-white mb-1">Ball-by-Ball</h2>
-        <p className="text-sm text-muted">
-          MI 187/6 (20 overs) &middot; CSK 156/4 (15.3 overs)
-        </p>
-      </div>
+      {innings.map((inn) => {
+        const playerNameMap = new Map<string, string>();
+        inn.battingCard.forEach((bc) =>
+          playerNameMap.set(bc.playerId, bc.player.name)
+        );
+        inn.bowlingCard.forEach((bc) =>
+          playerNameMap.set(bc.playerId, bc.player.name)
+        );
 
-      <div className="space-y-4">
-        {overs.map((overNum) => {
-          const overBalls = allBalls.filter((b) => b.over === overNum);
-          const overRuns = overBalls.reduce(
-            (sum, b) => sum + b.runs + (b.extras === "wd" || b.extras === "nb" ? 1 : 0),
-            0
-          );
-          const overWickets = overBalls.filter((b) => b.isWicket).length;
-          return (
-            <motion.div
-              key={overNum}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: overNum * 0.05 }}
-              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-lg font-bold text-white">
-                    Over {overNum + 1}
-                  </span>
-                  <span className="text-sm text-accent font-medium">
-                    {overRuns} runs
-                  </span>
-                  {overWickets > 0 && (
-                    <span className="text-sm text-danger font-medium">
-                      {overWickets} wkt
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-muted">
-                  {overBalls[0]?.bowler}
-                </span>
-              </div>
+        return (
+          <div key={inn.id} className="space-y-4">
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+              <h2 className="text-lg font-bold text-white mb-1">
+                Innings {inn.inningsNumber}
+              </h2>
+              <p className="text-sm text-muted">
+                {inn.totalRuns}/{inn.totalWickets} ({inn.totalOvers} overs)
+              </p>
+            </div>
 
-              <div className="flex gap-2 flex-wrap mb-3">
-                {overBalls.map((ball) => (
-                  <div key={ball.id} className="relative">
-                    <motion.div
-                      whileHover={{ scale: 1.15 }}
-                      onMouseEnter={() => setHoveredBall(ball.id)}
-                      onMouseLeave={() => setHoveredBall(null)}
-                      className={cn(
-                        "w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold cursor-default transition-all",
-                        getBallChipColor(ball)
-                      )}
-                    >
-                      {ball.isWicket
-                        ? "W"
-                        : ball.extras === "wd"
-                        ? "WD"
-                        : ball.extras === "nb"
-                        ? "NB"
-                        : ball.runs}
-                    </motion.div>
-                    {hoveredBall === ball.id && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl p-3 w-64 z-50"
-                      >
-                        <p className="text-xs text-white font-medium mb-1">
-                          {ball.batsman} vs {ball.bowler}
-                        </p>
-                        <p className="text-xs text-muted">{ball.description}</p>
-                      </motion.div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-1">
-                {overBalls.map((ball) => (
-                  <p
-                    key={ball.id}
-                    className="text-xs text-muted/70 leading-relaxed"
+            <div className="space-y-4">
+              {inn.overs.map((over) => {
+                const overWickets = over.balls.filter(
+                  (b) => b.isWicket
+                ).length;
+                return (
+                  <motion.div
+                    key={over.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: over.overNumber * 0.05 }}
+                    className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5"
                   >
-                    <span className="text-white/50 font-mono">
-                      {overNum + 1}.{ball.ball}
-                    </span>{" "}
-                    {ball.description}
-                  </p>
-                ))}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg font-bold text-white">
+                          Over {over.overNumber + 1}
+                        </span>
+                        <span className="text-sm text-accent font-medium">
+                          {over.totalRuns} runs
+                        </span>
+                        {overWickets > 0 && (
+                          <span className="text-sm text-danger font-medium">
+                            {overWickets} wkt
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted">
+                        {playerNameMap.get(over.bowlerId) || "Unknown"}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2 flex-wrap mb-3">
+                      {over.balls.map((ball) => (
+                        <div key={ball.id} className="relative">
+                          <motion.div
+                            whileHover={{ scale: 1.15 }}
+                            onMouseEnter={() => setHoveredBall(ball.id)}
+                            onMouseLeave={() => setHoveredBall(null)}
+                            className={cn(
+                              "w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold cursor-default transition-all",
+                              getBallChipColor(ball.ballResult)
+                            )}
+                          >
+                            {getBallChipLabel(ball)}
+                          </motion.div>
+                          {hoveredBall === ball.id && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl p-3 w-64 z-50"
+                            >
+                              <p className="text-xs text-white font-medium mb-1">
+                                {playerNameMap.get(ball.batsmanId) ||
+                                  "Unknown"}{" "}
+                                vs{" "}
+                                {playerNameMap.get(ball.bowlerId) ||
+                                  "Unknown"}
+                              </p>
+                              {ball.description && (
+                                <p className="text-xs text-muted">
+                                  {ball.description}
+                                </p>
+                              )}
+                              {ball.isWicket && ball.wicketType && (
+                                <p className="text-xs text-danger font-medium mt-1">
+                                  {ball.wicketType.replace(/_/g, " ")}
+                                </p>
+                              )}
+                            </motion.div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-1">
+                      {over.balls.map((ball) => {
+                        const ballInOver =
+                          ((ball.ballNumber - 1) % 6) + 1;
+                        return (
+                          <p
+                            key={ball.id}
+                            className="text-xs text-muted/70 leading-relaxed"
+                          >
+                            <span className="text-white/50 font-mono">
+                              {over.overNumber + 1}.{ballInOver}
+                            </span>{" "}
+                            {ball.description ||
+                              (ball.isWicket
+                                ? `WICKET - ${ball.wicketType?.replace(/_/g, " ") || "Out"}`
+                                : `${ball.runs} run${ball.runs !== 1 ? "s" : ""}`)}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </motion.div>
   );
 }

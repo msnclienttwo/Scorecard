@@ -12,8 +12,8 @@ export async function GET(
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
-        homeTeam: { select: { id: true, name: true, logo: true } },
-        awayTeam: { select: { id: true, name: true, logo: true } },
+        homeTeam: { select: { id: true, name: true, shortName: true, logo: true } },
+        awayTeam: { select: { id: true, name: true, shortName: true, logo: true } },
         tournament: { select: { id: true, name: true } },
         innings: {
           include: {

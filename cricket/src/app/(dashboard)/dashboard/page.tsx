@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -16,54 +17,17 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
 
-const stats = [
-  {
-    label: "Total Matches",
-    value: "1,284",
-    change: "+12.5%",
-    trend: "up" as const,
-    icon: Trophy,
-    color: "from-primary to-primary-light",
-  },
-  {
-    label: "Live Now",
-    value: "8",
-    change: "+3",
-    trend: "up" as const,
-    icon: Radio,
-    color: "from-success to-accent",
-  },
-  {
-    label: "Teams",
-    value: "256",
-    change: "+8.2%",
-    trend: "up" as const,
-    icon: Users,
-    color: "from-accent to-accent-light",
-  },
-  {
-    label: "Players",
-    value: "3,847",
-    change: "-2.1%",
-    trend: "down" as const,
-    icon: UserPlus,
-    color: "from-warning to-danger",
-  },
-];
-
-const liveMatches = [
-  { id: "1", team1: "Mumbai Indians", team2: "Chennai Super Kings", score1: "145/3", score2: "89/4", overs: "12.4", venue: "Wankhede Stadium" },
-  { id: "2", team1: "RCB", team2: "KKR", score1: "178/5", score2: "67/1", overs: "8.2", venue: "M. Chinnaswamy" },
-  { id: "3", team1: "Delhi Capitals", team2: "Rajasthan Royals", score1: "112/2", score2: "", overs: "15.0", venue: "Arun Jaitley" },
-];
-
-const recentMatches = [
-  { id: "1", date: "Jul 22, 2026", team1: "MI", team2: "CSK", result: "MI won by 5 wickets", status: "completed" },
-  { id: "2", date: "Jul 21, 2026", team1: "RCB", team2: "DC", result: "RCB won by 12 runs", status: "completed" },
-  { id: "3", date: "Jul 20, 2026", team1: "KKR", team2: "SRH", result: "KKR won by 3 wickets", status: "completed" },
-  { id: "4", date: "Jul 19, 2026", team1: "PBKS", team2: "GT", result: "GT won by 6 wickets", status: "completed" },
-  { id: "5", date: "Jul 18, 2026", team1: "CSK", team2: "RR", result: "CSK won by 8 runs", status: "completed" },
-];
+interface MatchData {
+  id: string;
+  name: string;
+  status: string;
+  venue: string | null;
+  scheduledAt: string;
+  result: string | null;
+  totalOvers: number;
+  homeTeam: { id: string; name: string; logo: string | null };
+  awayTeam: { id: string; name: string; logo: string | null };
+}
 
 const container = {
   hidden: { opacity: 0 },
@@ -75,8 +39,81 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded-lg bg-white/5", className)} />;
+}
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+
+  const [totalMatches, setTotalMatches] = useState(0);
+  const [liveCount, setLiveCount] = useState(0);
+  const [teamCount, setTeamCount] = useState(0);
+  const [playerCount, setPlayerCount] = useState(0);
+  const [liveMatches, setLiveMatches] = useState<MatchData[]>([]);
+  const [recentMatches, setRecentMatches] = useState<MatchData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboard() {
+      try {
+        const [matchesRes, liveRes, recentRes, teamsRes, playersRes] =
+          await Promise.all([
+            fetch("/api/matches?limit=1"),
+            fetch("/api/matches?status=LIVE&limit=10"),
+            fetch("/api/matches?status=COMPLETED&limit=5"),
+            fetch("/api/teams?limit=1"),
+            fetch("/api/players?limit=1"),
+          ]);
+
+        const matchesData = await matchesRes.json();
+        const liveData = await liveRes.json();
+        const recentData = await recentRes.json();
+        const teamsData = await teamsRes.json();
+        const playersData = await playersRes.json();
+
+        setTotalMatches(matchesData.pagination?.total ?? 0);
+        setLiveCount(liveData.pagination?.total ?? 0);
+        setLiveMatches(liveData.matches ?? []);
+        setRecentMatches(recentData.matches ?? []);
+        setTeamCount(teamsData.pagination?.total ?? 0);
+        setPlayerCount(playersData.pagination?.total ?? 0);
+      } catch (error) {
+        console.error("Failed to load dashboard:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboard();
+  }, []);
+
+  const stats = [
+    {
+      label: "Total Matches",
+      value: totalMatches.toLocaleString(),
+      icon: Trophy,
+      color: "from-primary to-primary-light",
+    },
+    {
+      label: "Live Now",
+      value: liveCount.toLocaleString(),
+      icon: Radio,
+      color: "from-success to-accent",
+    },
+    {
+      label: "Teams",
+      value: teamCount.toLocaleString(),
+      icon: Users,
+      color: "from-accent to-accent-light",
+    },
+    {
+      label: "Players",
+      value: playerCount.toLocaleString(),
+      icon: UserPlus,
+      color: "from-warning to-danger",
+    },
+  ];
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -88,23 +125,32 @@ export default function DashboardPage() {
       </motion.div>
 
       <motion.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <div key={stat.label} className="glass-card group rounded-2xl p-5">
-            <div className="flex items-center justify-between">
-              <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br", stat.color)}>
-                <stat.icon className="h-5 w-5 text-white" />
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="glass-card rounded-2xl p-5">
+                <div className="flex items-center justify-between">
+                  <SkeletonBlock className="h-11 w-11 rounded-xl" />
+                  <SkeletonBlock className="h-4 w-14" />
+                </div>
+                <div className="mt-4 space-y-2">
+                  <SkeletonBlock className="h-7 w-20" />
+                  <SkeletonBlock className="h-4 w-24" />
+                </div>
               </div>
-              <div className={cn("flex items-center gap-1 text-xs font-semibold", stat.trend === "up" ? "text-success" : "text-danger")}>
-                {stat.trend === "up" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {stat.change}
+            ))
+          : stats.map((stat) => (
+              <div key={stat.label} className="glass-card group rounded-2xl p-5">
+                <div className="flex items-center justify-between">
+                  <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br", stat.color)}>
+                    <stat.icon className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                  <p className="text-sm text-muted">{stat.label}</p>
+                </div>
               </div>
-            </div>
-            <div className="mt-4">
-              <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-              <p className="text-sm text-muted">{stat.label}</p>
-            </div>
-          </div>
-        ))}
+            ))}
       </motion.div>
 
       <motion.div variants={item}>
@@ -114,33 +160,52 @@ export default function DashboardPage() {
             View all <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
-          {liveMatches.map((match) => (
-            <div key={match.id} className="glass-card min-w-[320px] flex-shrink-0 rounded-2xl p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+        {loading ? (
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="glass-card min-w-[320px] flex-shrink-0 rounded-2xl p-5">
+                <SkeletonBlock className="mb-3 h-4 w-16" />
+                <div className="space-y-2">
+                  <SkeletonBlock className="h-4 w-full" />
+                  <SkeletonBlock className="h-4 w-full" />
+                </div>
+                <SkeletonBlock className="mt-3 h-3 w-32" />
+              </div>
+            ))}
+          </div>
+        ) : liveMatches.length === 0 ? (
+          <div className="glass-card rounded-2xl p-8 text-center">
+            <Radio className="mx-auto h-8 w-8 text-muted" />
+            <p className="mt-3 text-sm font-medium text-foreground">No live matches right now</p>
+            <p className="text-xs text-muted">Check back later for live action</p>
+          </div>
+        ) : (
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
+            {liveMatches.map((match) => (
+              <div key={match.id} className="glass-card min-w-[320px] flex-shrink-0 rounded-2xl p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                    </span>
+                    LIVE
                   </span>
-                  LIVE
-                </span>
-                <span className="text-xs text-muted">{match.overs} overs</span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground">{match.team1}</span>
-                  <span className="text-sm font-bold text-foreground">{match.score1}</span>
+                  <span className="text-xs text-muted">{match.totalOvers} overs</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground">{match.team2}</span>
-                  <span className="text-sm font-bold text-foreground">{match.score2 || "Yet to bat"}</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">{match.homeTeam.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">{match.awayTeam.name}</span>
+                  </div>
                 </div>
+                {match.venue && <p className="mt-3 text-xs text-muted">{match.venue}</p>}
               </div>
-              <p className="mt-3 text-xs text-muted">{match.venue}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </motion.div>
 
       <motion.div variants={item}>
@@ -162,18 +227,43 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {recentMatches.map((match) => (
-                  <tr key={match.id} className="transition-colors hover:bg-white/[0.02]">
-                    <td className="whitespace-nowrap px-5 py-3 text-sm text-muted">{match.date}</td>
-                    <td className="whitespace-nowrap px-5 py-3 text-sm font-medium text-foreground">{match.team1} vs {match.team2}</td>
-                    <td className="whitespace-nowrap px-5 py-3 text-sm text-foreground/80">{match.result}</td>
-                    <td className="whitespace-nowrap px-5 py-3">
-                      <span className="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success">
-                        Completed
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {loading
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-5 py-3"><SkeletonBlock className="h-4 w-24" /></td>
+                        <td className="px-5 py-3"><SkeletonBlock className="h-4 w-32" /></td>
+                        <td className="px-5 py-3"><SkeletonBlock className="h-4 w-40" /></td>
+                        <td className="px-5 py-3"><SkeletonBlock className="h-5 w-20 rounded-full" /></td>
+                      </tr>
+                    ))
+                  : recentMatches.length === 0
+                    ? (
+                      <tr>
+                        <td colSpan={4} className="px-5 py-12 text-center">
+                          <Trophy className="mx-auto h-8 w-8 text-muted" />
+                          <p className="mt-3 text-sm font-medium text-foreground">No completed matches yet</p>
+                          <p className="text-xs text-muted">Completed matches will appear here</p>
+                        </td>
+                      </tr>
+                    )
+                    : recentMatches.map((match) => (
+                        <tr key={match.id} className="transition-colors hover:bg-white/[0.02]">
+                          <td className="whitespace-nowrap px-5 py-3 text-sm text-muted">
+                            {new Date(match.scheduledAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </td>
+                          <td className="whitespace-nowrap px-5 py-3 text-sm font-medium text-foreground">
+                            {match.homeTeam.name} vs {match.awayTeam.name}
+                          </td>
+                          <td className="whitespace-nowrap px-5 py-3 text-sm text-foreground/80">
+                            {match.result || "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-5 py-3">
+                            <span className="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success">
+                              Completed
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
               </tbody>
             </table>
           </div>
