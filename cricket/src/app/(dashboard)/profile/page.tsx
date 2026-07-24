@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Camera, Mail, Phone, FileText, Save, Trophy, Users } from "lucide-react";
 import { cn, generateInitials } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const container = {
   hidden: { opacity: 0 },
@@ -16,10 +17,11 @@ const item = {
 };
 
 export default function ProfilePage() {
-  const [name, setName] = useState("John Doe");
-  const [email, setEmail] = useState("john@example.com");
-  const [phone, setPhone] = useState("+91 98765 43210");
-  const [bio, setBio] = useState("Cricket enthusiast and data analyst.");
+  const { user } = useAuthStore();
+  const [name, setName] = useState(user?.name || "");
+  const [email, setEmail] = useState(user?.email || "");
+  const [phone, setPhone] = useState("");
+  const [bio, setBio] = useState("");
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="mx-auto max-w-3xl space-y-6">
@@ -31,17 +33,17 @@ export default function ProfilePage() {
         <div className="flex flex-col items-center gap-4 sm:flex-row">
           <div className="relative">
             <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-2xl font-bold text-white">
-              {generateInitials(name)}
+              {generateInitials(user?.name || "U")}
             </div>
             <button className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-all hover:bg-primary-light">
               <Camera className="h-4 w-4" />
             </button>
           </div>
           <div className="text-center sm:text-left">
-            <h2 className="text-xl font-bold text-foreground">{name}</h2>
-            <p className="text-sm text-muted">{email}</p>
+            <h2 className="text-xl font-bold text-foreground">{user?.name || "User"}</h2>
+            <p className="text-sm text-muted">{user?.email || ""}</p>
             <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-              Admin
+              {(user?.role as string) || "User"}
             </span>
           </div>
         </div>
@@ -104,6 +106,7 @@ export default function ProfilePage() {
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                placeholder="Add phone number"
                 className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-foreground placeholder-muted outline-none transition-all focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
               />
             </div>
@@ -116,6 +119,7 @@ export default function ProfilePage() {
                 rows={3}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
+                placeholder="Tell us about yourself"
                 className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-foreground placeholder-muted outline-none transition-all focus:border-primary/50 focus:ring-1 focus:ring-primary/50 resize-none"
               />
             </div>

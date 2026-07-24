@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const stats = [
   {
@@ -75,11 +76,13 @@ const item = {
 };
 
 export default function DashboardPage() {
+  const user = useAuthStore((s) => s.user);
+
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
       <motion.div variants={item}>
         <h1 className="text-2xl font-bold text-foreground">
-          Welcome back, <span className="gradient-text">John</span>
+          Welcome back, <span className="gradient-text">{user?.name || "there"}</span>
         </h1>
         <p className="text-muted">Here&apos;s what&apos;s happening with your matches today</p>
       </motion.div>

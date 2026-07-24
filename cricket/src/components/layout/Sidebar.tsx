@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Zap,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, generateInitials } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -37,6 +38,7 @@ const navItems = [
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const { user } = useAuthStore();
 
   return (
     <motion.aside
@@ -134,7 +136,7 @@ export default function Sidebar() {
       <div className="border-t border-white/6 p-3">
         <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-bold text-white">
-            SC
+            {generateInitials(user?.name || "U")}
           </div>
           <AnimatePresence>
             {!collapsed && (
@@ -145,10 +147,7 @@ export default function Sidebar() {
                 className="flex flex-col overflow-hidden"
               >
                 <span className="truncate text-sm font-medium text-foreground">
-                  ScoreCast User
-                </span>
-                <span className="inline-flex w-fit items-center rounded-full bg-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                  Pro
+                  {user?.name || "User"}
                 </span>
               </motion.div>
             )}

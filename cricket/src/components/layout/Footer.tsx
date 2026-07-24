@@ -4,7 +4,7 @@ import { Zap, Github, Twitter, Linkedin, Instagram } from "lucide-react";
 const footerLinks = {
   Product: [
     { label: "Features", href: "/features" },
-    { label: "Pricing", href: "/pricing" },
+    { label: "About", href: "/about" },
     { label: "API", href: "/api-docs" },
     { label: "Integrations", href: "/integrations" },
     { label: "Changelog", href: "/changelog" },

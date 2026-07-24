@@ -11,10 +11,11 @@ import {
   User,
   Settings,
   LogOut,
-  Zap,
   Command,
 } from "lucide-react";
 import { cn, generateInitials } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
+import { signOut } from "next-auth/react";
 
 interface DashboardHeaderProps {
   onToggleSidebar: () => void;
@@ -23,6 +24,7 @@ interface DashboardHeaderProps {
 export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { user, logout } = useAuthStore();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -76,9 +78,9 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
               className="flex items-center gap-2.5 rounded-xl py-1.5 pl-1.5 pr-3 transition-colors hover:bg-white/5"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-xs font-bold text-white">
-                {generateInitials("John Doe")}
+                {generateInitials(user?.name || "U")}
               </div>
-              <span className="hidden text-sm font-medium text-foreground md:block">John Doe</span>
+              <span className="hidden text-sm font-medium text-foreground md:block">{user?.name || "User"}</span>
               <ChevronDown className={cn("h-4 w-4 text-muted transition-transform", showUserMenu && "rotate-180")} />
             </button>
 
@@ -92,8 +94,8 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
                   className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-white/10 bg-[#0a0f1a] p-1.5 shadow-xl"
                 >
                   <div className="px-3 py-2">
-                    <p className="text-sm font-medium text-foreground">John Doe</p>
-                    <p className="text-xs text-muted">john@example.com</p>
+                    <p className="text-sm font-medium text-foreground">{user?.name || "User"}</p>
+                    <p className="text-xs text-muted">{user?.email || ""}</p>
                   </div>
                   <div className="my-1 border-t border-white/5" />
                   <Link
@@ -115,7 +117,11 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
                   <div className="my-1 border-t border-white/5" />
                   <button
                     className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10"
-                    onClick={() => setShowUserMenu(false)}
+                    onClick={() => {
+                      logout();
+                      setShowUserMenu(false);
+                      signOut({ callbackUrl: "/login" });
+                    }}
                   >
                     <LogOut className="h-4 w-4" />
                     Sign out

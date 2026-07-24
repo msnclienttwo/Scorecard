@@ -12,9 +12,7 @@ import {
   ArrowRight,
   Play,
   Star,
-  ChevronRight,
   ChevronDown,
-  Check,
   CircleDot,
 } from "lucide-react";
 import { useState } from "react";
@@ -41,76 +39,6 @@ function CricketBall() {
           <div className="absolute top-[30%] left-[10%] right-[10%] h-[1px] bg-white/20 rotate-[15deg]" />
           <div className="absolute top-[70%] left-[10%] right-[10%] h-[1px] bg-white/20 -rotate-[15deg]" />
         </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function ScorePreview() {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.8, delay: 0.5 }}
-      className="bg-[#0d1320]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 w-full max-w-sm"
-    >
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-        <span className="text-red-400 text-xs font-bold uppercase tracking-wider">
-          Live
-        </span>
-        <span className="text-white/30 text-xs ml-auto">IPL 2026</span>
-      </div>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
-              IND
-            </div>
-            <span className="text-white font-medium">India</span>
-          </div>
-          <span className="text-2xl font-bold text-white">
-            187<span className="text-white/40">/</span>
-            <span className="text-white/60">4</span>
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-yellow-600 flex items-center justify-center text-xs font-bold text-white">
-              AUS
-            </div>
-            <span className="text-white/60">Australia</span>
-          </div>
-          <span className="text-lg text-white/40 font-medium">Batting 2nd</span>
-        </div>
-      </div>
-      <div className="mt-4 pt-3 border-t border-white/10 flex justify-between text-xs text-white/50">
-        <span>Overs: 18.3</span>
-        <span>CRR: 8.52</span>
-        <span>RRR: 9.45</span>
-      </div>
-      <div className="mt-3 flex gap-1">
-        {["0", "1", "4", "0", "W", "6", "1", "2"].map((ball, i) => (
-          <motion.div
-            key={i}
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 1 + i * 0.1, type: "spring" }}
-            className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-              ball === "4"
-                ? "bg-blue-600 text-white"
-                : ball === "6"
-                ? "bg-cyan-500 text-white"
-                : ball === "W"
-                ? "bg-red-600 text-white"
-                : ball === "0"
-                ? "bg-white/10 text-white/40"
-                : "bg-white/20 text-white"
-            }`}
-          >
-            {ball}
-          </motion.div>
-        ))}
       </div>
     </motion.div>
   );
@@ -198,62 +126,10 @@ const testimonials = [
   },
 ];
 
-const pricing = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "forever",
-    desc: "Perfect for casual cricket",
-    features: [
-      "5 matches per month",
-      "Basic scorecard",
-      "Up to 10 players",
-      "Share live scores",
-      "Basic statistics",
-    ],
-    cta: "Get Started",
-    popular: false,
-  },
-  {
-    name: "Pro",
-    price: "$9",
-    period: "/month",
-    desc: "For serious cricket organizers",
-    features: [
-      "Unlimited matches",
-      "Full scorecard & analytics",
-      "Unlimited players",
-      "Tournament management",
-      "Advanced statistics",
-      "Priority support",
-      "Custom branding",
-    ],
-    cta: "Start Free Trial",
-    popular: true,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    desc: "For leagues & organizations",
-    features: [
-      "Everything in Pro",
-      "Multi-ground management",
-      "API access",
-      "Dedicated support",
-      "Custom integrations",
-      "White-label solution",
-      "SLA guarantee",
-    ],
-    cta: "Contact Sales",
-    popular: false,
-  },
-];
-
 const faqs = [
   {
     q: "Is ScoreCast really free?",
-    a: "Yes! Our free plan includes 5 matches per month with full scoring capabilities. No credit card required.",
+    a: "Yes! ScoreCast is completely free to use. Create unlimited matches, score live, and share with the world. No credit card required.",
   },
   {
     q: "Can I use ScoreCast for my tournament?",
@@ -305,13 +181,13 @@ export default function LandingPage() {
           />
         </div>
 
-        <div className="relative max-w-7xl mx-auto w-full">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div className="relative max-w-5xl mx-auto w-full">
+          <div className="flex flex-col items-center gap-12">
             <motion.div
               initial="hidden"
               animate="visible"
               variants={stagger}
-              className="text-center lg:text-left"
+              className="text-center"
             >
               <motion.div
                 variants={fadeUp}
@@ -336,7 +212,7 @@ export default function LandingPage() {
 
               <motion.p
                 variants={fadeUp}
-                className="text-lg text-white/50 max-w-xl mx-auto lg:mx-0 mb-8"
+                className="text-lg text-white/50 max-w-xl mx-auto mb-8"
               >
                 Create matches, score live, and share with the world. The most
                 beautiful cricket platform ever built.
@@ -344,7 +220,7 @@ export default function LandingPage() {
 
               <motion.div
                 variants={fadeUp}
-                className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start"
+                className="flex flex-col sm:flex-row items-center gap-4 justify-center"
               >
                 <Link
                   href="/register"
@@ -354,7 +230,7 @@ export default function LandingPage() {
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
                 <Link
-                  href="/matches"
+                  href="/login?callbackUrl=/matches"
                   className="flex items-center gap-2 px-8 py-4 rounded-2xl border border-white/10 text-white/70 font-medium hover:bg-white/5 transition-all"
                 >
                   <Play className="w-5 h-5" />
@@ -363,19 +239,13 @@ export default function LandingPage() {
               </motion.div>
             </motion.div>
 
-            <div className="hidden lg:flex justify-center items-center relative">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.3 }}
-                className="relative"
-              >
-                <CricketBall />
-              </motion.div>
-              <div className="absolute top-0 right-0">
-                <ScorePreview />
-              </div>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.8, delay: 0.3 }}
+            >
+              <CricketBall />
+            </motion.div>
           </div>
         </div>
       </section>
@@ -543,82 +413,6 @@ export default function LandingPage() {
                     <div className="text-xs text-white/40">{t.role}</div>
                   </div>
                 </div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="py-24 px-4">
-        <div className="max-w-5xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={fadeUp}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              Simple, transparent pricing
-            </h2>
-            <p className="text-lg text-white/50">
-              Start free, upgrade when you need more
-            </p>
-          </motion.div>
-
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={stagger}
-            className="grid md:grid-cols-3 gap-6"
-          >
-            {pricing.map((p, i) => (
-              <motion.div
-                key={i}
-                variants={fadeUp}
-                className={`relative p-6 rounded-2xl border ${
-                  p.popular
-                    ? "bg-white/[0.06] border-blue-500/50 shadow-[0_0_40px_rgba(37,99,235,0.1)]"
-                    : "bg-white/[0.03] border-white/[0.06]"
-                }`}
-              >
-                {p.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 text-xs font-semibold text-white">
-                    Most Popular
-                  </div>
-                )}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-white mb-1">
-                    {p.name}
-                  </h3>
-                  <p className="text-sm text-white/40">{p.desc}</p>
-                </div>
-                <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-4xl font-bold text-white">
-                    {p.price}
-                  </span>
-                  {p.period && (
-                    <span className="text-white/40">{p.period}</span>
-                  )}
-                </div>
-                <ul className="space-y-3 mb-6">
-                  {p.features.map((f, j) => (
-                    <li key={j} className="flex items-center gap-2 text-sm text-white/60">
-                      <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  className={`w-full py-3 rounded-xl font-medium text-sm transition-all ${
-                    p.popular
-                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:shadow-[0_0_30px_rgba(37,99,235,0.3)]"
-                      : "bg-white/5 text-white/70 hover:bg-white/10 border border-white/10"
-                  }`}
-                >
-                  {p.cta}
-                </button>
               </motion.div>
             ))}
           </motion.div>

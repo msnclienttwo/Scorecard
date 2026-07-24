@@ -14,7 +14,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, generateInitials } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
+import { signOut } from "next-auth/react";
 
 const navLinks = [
   { label: "Live", href: "/live" },
@@ -29,6 +31,7 @@ export default function Navbar() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { user, isAuthenticated, logout } = useAuthStore();
   const { scrollY } = useScroll();
   const bgOpacity = useTransform(scrollY, [0, 100], [0, 0.95]);
   const borderOpacity = useTransform(scrollY, [0, 100], [0, 1]);
@@ -115,69 +118,95 @@ export default function Navbar() {
                 <Search className="h-5 w-5" />
               </button>
 
-              <button className="relative rounded-lg p-2 text-muted transition-colors hover:bg-white/5 hover:text-foreground">
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
-                  3
-                </span>
-              </button>
+              {isAuthenticated ? (
+                <>
+                  <button className="relative rounded-lg p-2 text-muted transition-colors hover:bg-white/5 hover:text-foreground">
+                    <Bell className="h-5 w-5" />
+                    <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
+                      3
+                    </span>
+                  </button>
 
-              <div className="relative hidden md:block">
-                <button
-                  onClick={() => setProfileOpen(!profileOpen)}
-                  className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-white/5"
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-white">
-                    SC
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-muted" />
-                </button>
-
-                <AnimatePresence>
-                  {profileOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#0d1220] shadow-2xl"
+                  <div className="relative hidden md:block">
+                    <button
+                      onClick={() => setProfileOpen(!profileOpen)}
+                      className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-white/5"
                     >
-                      <div className="border-b border-white/6 p-3">
-                        <p className="text-sm font-medium text-foreground">ScoreCast User</p>
-                        <p className="text-xs text-muted">user@scorecast.app</p>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-white">
+                        {generateInitials(user?.name || "U")}
                       </div>
-                      <div className="p-1.5">
-                        {[
-                          { icon: User, label: "Profile", href: "/profile" },
-                          { icon: Settings, label: "Settings", href: "/settings" },
-                        ].map((item) => (
-                          <Link
-                            key={item.href}
-                            href={item.href}
-                            className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-white/5 hover:text-foreground"
-                            onClick={() => setProfileOpen(false)}
-                          >
-                            <item.icon className="h-4 w-4" />
-                            {item.label}
-                          </Link>
-                        ))}
-                      </div>
-                      <div className="border-t border-white/6 p-1.5">
-                        <button className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-danger transition-colors hover:bg-danger/10">
-                          <LogOut className="h-4 w-4" />
-                          Sign out
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                      <ChevronDown className="h-4 w-4 text-muted" />
+                    </button>
+
+                    <AnimatePresence>
+                      {profileOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#0d1220] shadow-2xl"
+                        >
+                          <div className="border-b border-white/6 p-3">
+                            <p className="text-sm font-medium text-foreground">{user?.name}</p>
+                            <p className="text-xs text-muted">{user?.email}</p>
+                          </div>
+                          <div className="p-1.5">
+                            {[
+                              { icon: User, label: "Profile", href: "/profile" },
+                              { icon: Settings, label: "Settings", href: "/settings" },
+                            ].map((item) => (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                                onClick={() => setProfileOpen(false)}
+                              >
+                                <item.icon className="h-4 w-4" />
+                                {item.label}
+                              </Link>
+                            ))}
+                          </div>
+                          <div className="border-t border-white/6 p-1.5">
+                            <button
+                              onClick={() => {
+                                logout();
+                                setProfileOpen(false);
+                                signOut({ callbackUrl: "/login" });
+                              }}
+                              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-danger transition-colors hover:bg-danger/10"
+                            >
+                              <LogOut className="h-4 w-4" />
+                              Sign out
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </>
+              ) : (
+                <div className="hidden items-center gap-2 md:flex">
+                  <Link
+                    href="/login"
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                  >
+                    Register
+                  </Link>
+                </div>
+              )}
 
               <button
                 onClick={() => setMobileOpen(!mobileOpen)}
                 className="rounded-lg p-2 text-muted transition-colors hover:bg-white/5 hover:text-foreground md:hidden"
               >
-                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 h-5" />}
               </button>
             </div>
           </nav>
@@ -204,20 +233,51 @@ export default function Navbar() {
                 </Link>
               ))}
               <div className="my-2 border-t border-white/6" />
-              <Link
-                href="/profile"
-                className="rounded-lg px-4 py-3 text-sm font-medium text-muted transition-colors hover:bg-white/5 hover:text-foreground"
-                onClick={() => setMobileOpen(false)}
-              >
-                Profile
-              </Link>
-              <Link
-                href="/settings"
-                className="rounded-lg px-4 py-3 text-sm font-medium text-muted transition-colors hover:bg-white/5 hover:text-foreground"
-                onClick={() => setMobileOpen(false)}
-              >
-                Settings
-              </Link>
+              {isAuthenticated ? (
+                <>
+                  <Link
+                    href="/profile"
+                    className="rounded-lg px-4 py-3 text-sm font-medium text-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    Profile
+                  </Link>
+                  <Link
+                    href="/settings"
+                    className="rounded-lg px-4 py-3 text-sm font-medium text-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    Settings
+                  </Link>
+                  <button
+                    onClick={() => {
+                      logout();
+                      setMobileOpen(false);
+                      signOut({ callbackUrl: "/login" });
+                    }}
+                    className="rounded-lg px-4 py-3 text-sm font-medium text-danger text-left transition-colors hover:bg-danger/10"
+                  >
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="rounded-lg px-4 py-3 text-sm font-medium text-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-3 text-sm font-semibold text-white text-center"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    Register
+                  </Link>
+                </>
+              )}
             </div>
           </motion.div>
         )}
