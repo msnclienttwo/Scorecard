@@ -213,7 +213,7 @@ export default function SearchPage() {
             <SearchIcon className="h-10 w-10 text-muted/50" />
           </div>
           <h3 className="mt-4 text-lg font-semibold text-foreground">
-            Search ScoreCast
+            Search ScoreBolt
           </h3>
           <p className="mt-1 text-sm text-muted">
             Find players, teams, matches, and tournaments

@@ -95,12 +95,12 @@ const steps = [
 
 const faqs = [
   {
-    q: "Is ScoreCast really free?",
-    a: "Yes! ScoreCast is completely free to use. Create unlimited matches, score live, and share with the world. No credit card required.",
+    q: "Is ScoreBolt really free?",
+    a: "Yes! ScoreBolt is completely free to use. Create unlimited matches, score live, and share with the world. No credit card required.",
   },
   {
-    q: "Can I use ScoreCast for my tournament?",
-    a: "Absolutely. ScoreCast supports full tournament management including points tables, fixtures, playoffs, and live standings.",
+    q: "Can I use ScoreBolt for my tournament?",
+    a: "Absolutely. ScoreBolt supports full tournament management including points tables, fixtures, playoffs, and live standings.",
   },
   {
     q: "How does live sharing work?",
@@ -108,11 +108,11 @@ const faqs = [
   },
   {
     q: "Do you have a mobile app?",
-    a: "ScoreCast is a Progressive Web App that works perfectly on mobile browsers. Install it on your home screen for a native app experience.",
+    a: "ScoreBolt is a Progressive Web App that works perfectly on mobile browsers. Install it on your home screen for a native app experience.",
   },
   {
     q: "Can I track player statistics?",
-    a: "Yes, ScoreCast tracks comprehensive player statistics including runs, averages, strike rates, wickets, economy, and much more.",
+    a: "Yes, ScoreBolt tracks comprehensive player statistics including runs, averages, strike rates, wickets, economy, and much more.",
   },
 ];
 
@@ -230,7 +230,7 @@ export default function LandingPage() {
               Everything you need
             </h2>
             <p className="text-lg text-white/50 max-w-2xl mx-auto">
-              From casual weekend matches to professional tournaments, ScoreCast
+              From casual weekend matches to professional tournaments, ScoreBolt
               has everything to make cricket scoring effortless.
             </p>
           </motion.div>
@@ -376,7 +376,7 @@ export default function LandingPage() {
               Ready to transform your cricket experience?
             </h2>
             <p className="text-lg text-white/50 mb-8 max-w-2xl mx-auto">
-              Join thousands of cricket enthusiasts who trust ScoreCast to
+              Join thousands of cricket enthusiasts who trust ScoreBolt to
               score, track, and share their matches.
             </p>
             <Link

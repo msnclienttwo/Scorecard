@@ -19,7 +19,7 @@ export default function AuthLayout({
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent">
             <Zap className="h-5 w-5 text-white" />
           </div>
-          <span className="gradient-text text-2xl font-bold">ScoreCast</span>
+          <span className="gradient-text text-2xl font-bold">ScoreBolt</span>
         </Link>
         {children}
       </div>

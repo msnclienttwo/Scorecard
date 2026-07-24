@@ -106,7 +106,7 @@ export default function PublicLiveScorePage() {
       <div className="min-h-screen bg-background flex flex-col">
         <header className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-4 py-3">
           <div className="max-w-2xl mx-auto flex items-center justify-between">
-            <span className="text-lg font-bold gradient-text">ScoreCast</span>
+            <span className="text-lg font-bold gradient-text">ScoreBolt</span>
           </div>
         </header>
         <main className="flex-1 flex items-center justify-center">
@@ -180,7 +180,7 @@ export default function PublicLiveScorePage() {
       <header className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold gradient-text">ScoreCast</span>
+            <span className="text-lg font-bold gradient-text">ScoreBolt</span>
             {match.status === "LIVE" && (
               <span className="text-[10px] text-success bg-success/15 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
@@ -441,7 +441,7 @@ export default function PublicLiveScorePage() {
 
       <footer className="text-center py-4 border-t border-white/5">
         <p className="text-[10px] text-muted/50">
-          Powered by ScoreCast &middot; Auto-refreshes every 30 seconds
+          Powered by ScoreBolt &middot; Auto-refreshes every 30 seconds
         </p>
       </footer>
     </div>

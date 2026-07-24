@@ -60,7 +60,7 @@ export default function Sidebar() {
                   exit={{ opacity: 0, width: 0 }}
                   className="gradient-text whitespace-nowrap text-lg font-bold"
                 >
-                  ScoreCast
+                  ScoreBolt
                 </motion.span>
               )}
             </AnimatePresence>

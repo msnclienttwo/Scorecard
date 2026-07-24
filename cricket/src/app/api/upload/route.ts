@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     const result = await new Promise<{ public_id: string; secure_url: string }>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'scorecast',
+          folder: 'scorebolt',
           resource_type: 'image',
           transformation: [
             { width: 800, height: 800, crop: 'limit', quality: 'auto' }

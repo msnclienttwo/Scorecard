@@ -11,8 +11,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "ScoreCast - Live Cricket Scoring, Reimagined",
-    template: "%s | ScoreCast",
+    default: "ScoreBolt - Live Cricket Scoring, Reimagined",
+    template: "%s | ScoreBolt",
   },
   description:
     "Create matches, score live, and share with the world. The most beautiful cricket scoring platform ever built.",
@@ -24,14 +24,14 @@ export const metadata: Metadata = {
     "tournament management",
     "cricket app",
   ],
-  authors: [{ name: "ScoreCast" }],
-  creator: "ScoreCast",
+  authors: [{ name: "ScoreBolt" }],
+  creator: "ScoreBolt",
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://scorecast.app",
-    siteName: "ScoreCast",
-    title: "ScoreCast - Live Cricket Scoring, Reimagined",
+    url: "https://scorebolt.app",
+    siteName: "ScoreBolt",
+    title: "ScoreBolt - Live Cricket Scoring, Reimagined",
     description:
       "Create matches, score live, and share with the world. The most beautiful cricket scoring platform ever built.",
     images: [
@@ -39,17 +39,17 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "ScoreCast - Live Cricket Scoring",
+        alt: "ScoreBolt - Live Cricket Scoring",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ScoreCast - Live Cricket Scoring, Reimagined",
+    title: "ScoreBolt - Live Cricket Scoring, Reimagined",
     description:
       "Create matches, score live, and share with the world. The most beautiful cricket scoring platform ever built.",
     images: ["/og-image.png"],
-    creator: "@scorecast",
+    creator: "@scorebolt",
   },
   robots: {
     index: true,

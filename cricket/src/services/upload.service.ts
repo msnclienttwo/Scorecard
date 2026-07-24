@@ -16,7 +16,7 @@ export class UploadService {
   private static getAuthHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('scorecast-token');
+      const token = localStorage.getItem('scorebolt-token');
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }

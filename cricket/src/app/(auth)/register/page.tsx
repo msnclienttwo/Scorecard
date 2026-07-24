@@ -119,7 +119,7 @@ function RegisterForm() {
       >
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-foreground">Create account</h1>
-          <p className="mt-1 text-sm text-muted">Join ScoreCast and start scoring</p>
+          <p className="mt-1 text-sm text-muted">Join ScoreBolt and start scoring</p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>

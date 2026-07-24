@@ -82,7 +82,7 @@ export default function Navbar() {
                   <Zap className="h-4 w-4 text-white" />
                 </div>
                 <span className="gradient-text text-xl font-bold tracking-tight">
-                  ScoreCast
+                  ScoreBolt
                 </span>
               </Link>
 

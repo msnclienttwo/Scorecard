@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://scorecast.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://scorebolt.app";
 
 const STATIC_ROUTES = [
   "",

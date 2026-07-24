@@ -32,10 +32,10 @@ const footerLinks = {
 };
 
 const socialLinks = [
-  { icon: Twitter, href: "https://twitter.com/scorecast", label: "Twitter" },
-  { icon: Github, href: "https://github.com/scorecast", label: "GitHub" },
-  { icon: Linkedin, href: "https://linkedin.com/company/scorecast", label: "LinkedIn" },
-  { icon: Instagram, href: "https://instagram.com/scorecast", label: "Instagram" },
+  { icon: Twitter, href: "https://twitter.com/scorebolt", label: "Twitter" },
+  { icon: Github, href: "https://github.com/scorebolt", label: "GitHub" },
+  { icon: Linkedin, href: "https://linkedin.com/company/scorebolt", label: "LinkedIn" },
+  { icon: Instagram, href: "https://instagram.com/scorebolt", label: "Instagram" },
 ];
 
 export default function Footer() {
@@ -51,7 +51,7 @@ export default function Footer() {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent">
                 <Zap className="h-4.5 w-4.5 text-white" />
               </div>
-              <span className="gradient-text text-xl font-bold">ScoreCast</span>
+              <span className="gradient-text text-xl font-bold">ScoreBolt</span>
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">
               Create. Score. Share Live. The most beautiful cricket scoring platform
@@ -96,7 +96,7 @@ export default function Footer() {
 
         <div className="flex flex-col items-center justify-between gap-4 border-t border-white/6 py-8 sm:flex-row">
           <p className="text-sm text-muted">
-            &copy; {new Date().getFullYear()} ScoreCast. All rights reserved.
+            &copy; {new Date().getFullYear()} ScoreBolt. All rights reserved.
           </p>
           <div className="flex items-center gap-3">
             {socialLinks.map((social) => (

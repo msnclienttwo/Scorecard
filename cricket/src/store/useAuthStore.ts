@@ -54,7 +54,7 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (loading) => set({ isLoading: loading }),
     }),
     {
-      name: 'scorecast-auth',
+      name: 'scorebolt-auth',
       partialize: (state) => ({
         token: state.token,
         user: state.user,

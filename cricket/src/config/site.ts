@@ -1,12 +1,12 @@
 export const siteConfig = {
-  name: "ScoreCast",
+  name: "ScoreBolt",
   description:
     "Live cricket scoring platform with real-time updates, detailed scorecards, and match analytics.",
   url: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
   ogImage: "/og.png",
   links: {
-    twitter: "https://twitter.com/scorecast",
-    github: "https://github.com/scorecast",
+    twitter: "https://twitter.com/scorebolt",
+    github: "https://github.com/scorebolt",
   },
   navItems: [
     { label: "Home", href: "/" },
@@ -23,7 +23,7 @@ export const siteConfig = {
   ],
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "",
-    uploadPreset: "scorecast_uploads",
+    uploadPreset: "scorebolt_uploads",
   },
 } as const;
 
