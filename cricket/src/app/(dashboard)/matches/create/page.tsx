@@ -19,8 +19,12 @@ import {
   ChevronDown,
   Loader2,
   X,
+  Shield,
+  MinusCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CreateTeamModal } from "@/components/teams/CreateTeamModal";
+import { CreatePlayerModal } from "@/components/players/CreatePlayerModal";
 
 interface Team {
   id: string;
@@ -31,7 +35,8 @@ interface Team {
 interface Player {
   id: string;
   name: string;
-  role: string;
+  role: string | null;
+  shortName: string | null;
   teamId?: string;
 }
 
@@ -46,6 +51,8 @@ interface MatchFormData {
   teamB: string;
   playersA: string[];
   playersB: string[];
+  captainA: string;
+  captainB: string;
   tossWinner: string;
   tossDecision: "bat" | "bowl";
   umpires: string[];
@@ -75,10 +82,16 @@ export default function CreateMatchPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
 
+  const [createTeamOpen, setCreateTeamOpen] = useState(false);
+  const [createTeamTarget, setCreateTeamTarget] = useState<"A" | "B">("A");
+
   const [playersA, setPlayersA] = useState<Player[]>([]);
   const [playersB, setPlayersB] = useState<Player[]>([]);
   const [playersALoading, setPlayersALoading] = useState(false);
   const [playersBLoading, setPlayersBLoading] = useState(false);
+
+  const [createPlayerOpen, setCreatePlayerOpen] = useState(false);
+  const [createPlayerTarget, setCreatePlayerTarget] = useState<"A" | "B">("A");
 
   const [formData, setFormData] = useState<MatchFormData>({
     matchName: "",
@@ -91,6 +104,8 @@ export default function CreateMatchPage() {
     teamB: "",
     playersA: [],
     playersB: [],
+    captainA: "",
+    captainB: "",
     tossWinner: "",
     tossDecision: "bat",
     umpires: [],
@@ -98,22 +113,35 @@ export default function CreateMatchPage() {
     tournamentId: "",
   });
 
-  useEffect(() => {
-    const fetchTeams = async () => {
-      try {
-        setTeamsLoading(true);
-        const res = await fetch("/api/teams?limit=100");
-        if (res.ok) {
-          const data = await res.json();
-          setTeams(data.teams ?? data ?? []);
-        }
-      } catch {
-        console.error("Failed to fetch teams");
-      } finally {
-        setTeamsLoading(false);
+  const fetchTeams = useCallback(async () => {
+    try {
+      setTeamsLoading(true);
+      const res = await fetch("/api/teams?limit=100");
+      if (res.ok) {
+        const data = await res.json();
+        setTeams(data.teams ?? data ?? []);
       }
-    };
+    } catch {
+      console.error("Failed to fetch teams");
+    } finally {
+      setTeamsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
     fetchTeams();
+  }, [fetchTeams]);
+
+  const refreshTeams = useCallback(async () => {
+    try {
+      const res = await fetch("/api/teams?limit=100");
+      if (res.ok) {
+        const data = await res.json();
+        setTeams(data.teams ?? data ?? []);
+      }
+    } catch {
+      console.error("Failed to refresh teams");
+    }
   }, []);
 
   const fetchPlayers = useCallback(async (teamId: string, side: "A" | "B") => {
@@ -137,20 +165,51 @@ export default function CreateMatchPage() {
   useEffect(() => {
     if (formData.teamA) {
       fetchPlayers(formData.teamA, "A");
-      setFormData((prev) => ({ ...prev, playersA: [] }));
+      setFormData((prev) => ({ ...prev, playersA: [], captainA: "" }));
     }
   }, [formData.teamA, fetchPlayers]);
 
   useEffect(() => {
     if (formData.teamB) {
       fetchPlayers(formData.teamB, "B");
-      setFormData((prev) => ({ ...prev, playersB: [] }));
+      setFormData((prev) => ({ ...prev, playersB: [], captainB: "" }));
     }
   }, [formData.teamB, fetchPlayers]);
 
   const updateForm = (field: keyof MatchFormData, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
+
+  const handleTeamCreated = useCallback(
+    (team: { id: string; name: string; shortName?: string }) => {
+      refreshTeams().then(() => {
+        setFormData((prev) => ({
+          ...prev,
+          ...(createTeamTarget === "A"
+            ? { teamA: team.id }
+            : { teamB: team.id }),
+        }));
+      });
+    },
+    [createTeamTarget, refreshTeams]
+  );
+
+  const handlePlayerCreated = useCallback(
+    (player: { id: string; name: string }) => {
+      const targetTeam = createPlayerTarget === "A" ? formData.teamA : formData.teamB;
+      if (targetTeam) {
+        fetchPlayers(targetTeam, createPlayerTarget).then(() => {
+          setFormData((prev) => ({
+            ...prev,
+            ...(createPlayerTarget === "A"
+              ? { playersA: [...prev.playersA, player.id] }
+              : { playersB: [...prev.playersB, player.id] }),
+          }));
+        });
+      }
+    },
+    [createPlayerTarget, formData.teamA, formData.teamB, fetchPlayers]
+  );
 
   const handleFormatChange = (format: string) => {
     const f = format as MatchFormData["format"];
@@ -233,12 +292,15 @@ export default function CreateMatchPage() {
 
       if (res.ok) {
         const data = await res.json();
-        router.push(`/matches/${data.id ?? data.match?.id ?? ""}`);
+        router.push(`/matches/${data.match?.id ?? data.id ?? ""}`);
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.message ?? "Failed to create match");
+        const msg = err.error || err.message || "Failed to create match";
+        console.error("Match creation failed:", msg);
+        alert(msg);
       }
-    } catch {
+    } catch (e) {
+      console.error("Match creation error:", e);
       alert("Something went wrong while creating the match");
     } finally {
       setSubmitting(false);
@@ -363,18 +425,10 @@ export default function CreateMatchPage() {
                           onChange={(e) => handleFormatChange(e.target.value)}
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
                         >
-                          <option value="T20" className="bg-background">
-                            T20
-                          </option>
-                          <option value="ODI" className="bg-background">
-                            ODI
-                          </option>
-                          <option value="T10" className="bg-background">
-                            T10
-                          </option>
-                          <option value="Custom" className="bg-background">
-                            Custom
-                          </option>
+                          <option value="T20" className="bg-background">T20</option>
+                          <option value="ODI" className="bg-background">ODI</option>
+                          <option value="T10" className="bg-background">T10</option>
+                          <option value="Custom" className="bg-background">Custom</option>
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
                       </div>
@@ -469,59 +523,72 @@ export default function CreateMatchPage() {
                     <div className="text-center py-16">
                       <Swords className="w-12 h-12 text-muted mx-auto mb-3 opacity-50" />
                       <p className="text-muted mb-2">No teams found</p>
-                      <p className="text-sm text-white/30">
+                      <p className="text-sm text-white/30 mb-4">
                         Create some teams first before setting up a match.
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreateTeamTarget("A");
+                          setCreateTeamOpen(true);
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Create Your First Team
+                      </button>
                     </div>
                   ) : (
                     <>
                       <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm text-muted mb-2">
-                            Home Team
-                          </label>
-                          <div className="relative">
-                            <select
-                              value={formData.teamA}
-                              onChange={(e) => updateForm("teamA", e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
-                            >
-                              <option value="" className="bg-background">
-                                Select home team
-                              </option>
-                              {teams.map((team) => (
-                                <option key={team.id} value={team.id} className="bg-background">
-                                  {team.name}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm text-muted mb-2">
-                            Away Team
-                          </label>
-                          <div className="relative">
-                            <select
-                              value={formData.teamB}
-                              onChange={(e) => updateForm("teamB", e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
-                            >
-                              <option value="" className="bg-background">
-                                Select away team
-                              </option>
-                              {teams
-                                .filter((t) => t.id !== formData.teamA)
-                                .map((team) => (
-                                  <option key={team.id} value={team.id} className="bg-background">
-                                    {team.name}
+                        {(["A", "B"] as const).map((side) => {
+                          const teamId = side === "A" ? formData.teamA : formData.teamB;
+                          const playerCount = side === "A" ? playersA.length : playersB.length;
+                          return (
+                            <div key={side}>
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="block text-sm text-muted">
+                                  {side === "A" ? "Home Team" : "Away Team"}
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCreateTeamTarget(side);
+                                    setCreateTeamOpen(true);
+                                  }}
+                                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  Create Team
+                                </button>
+                              </div>
+                              <div className="relative">
+                                <select
+                                  value={teamId}
+                                  onChange={(e) => updateForm(side === "A" ? "teamA" : "teamB", e.target.value)}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-primary transition-colors"
+                                >
+                                  <option value="" className="bg-background">
+                                    Select {side === "A" ? "home" : "away"} team
                                   </option>
-                                ))}
-                            </select>
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
-                          </div>
-                        </div>
+                                  {teams
+                                    .filter((t) => t.id !== (side === "A" ? formData.teamB : formData.teamA))
+                                    .map((team) => (
+                                      <option key={team.id} value={team.id} className="bg-background">
+                                        {team.name}
+                                      </option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
+                              </div>
+                              {teamId && (
+                                <p className="mt-2 text-xs text-white/40">
+                                  {playerCount} players available
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                       {(formData.teamA || formData.teamB) && (
                         <div className="grid grid-cols-2 gap-4 mt-4">
@@ -558,22 +625,64 @@ export default function CreateMatchPage() {
                   exit={{ opacity: 0, x: -20 }}
                   className="space-y-6"
                 >
-                  <h2 className="text-xl font-semibold text-white mb-4">
-                    Select Players
-                  </h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-white">
+                      Select Players
+                    </h2>
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className="text-white/60">
+                        {teamName(formData.teamA)}:{" "}
+                        <span className="text-white font-medium">
+                          {formData.playersA.length}
+                        </span>
+                        /11
+                      </span>
+                      <span className="text-white/60">
+                        {teamName(formData.teamB)}:{" "}
+                        <span className="text-white font-medium">
+                          {formData.playersB.length}
+                        </span>
+                        /11
+                      </span>
+                    </div>
+                  </div>
                   <div className="grid md:grid-cols-2 gap-6">
                     {(["A", "B"] as const).map((team) => {
                       const teamId = team === "A" ? formData.teamA : formData.teamB;
                       const players = team === "A" ? playersA : playersB;
                       const loading = team === "A" ? playersALoading : playersBLoading;
                       const selected = team === "A" ? formData.playersA : formData.playersB;
+                      const captain = team === "A" ? formData.captainA : formData.captainB;
+                      const setCaptainField = team === "A" ? "captainA" : "captainB";
 
                       return (
                         <div key={team}>
-                          <h3 className="text-sm font-medium text-muted mb-3">
-                            {teamId ? teamName(teamId) : team === "A" ? "Home Team" : "Away Team"}{" "}
-                            — Select 11
-                          </h3>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-medium text-white">
+                              {teamId ? teamName(teamId) : team === "A" ? "Home Team" : "Away Team"}
+                            </h3>
+                            <div className="flex items-center gap-3">
+                              <span className={cn(
+                                "text-xs font-medium px-2 py-0.5 rounded-full",
+                                selected.length >= 11 ? "bg-green-500/20 text-green-400" : "bg-white/10 text-white/50"
+                              )}>
+                                {selected.length}/11
+                              </span>
+                              {teamId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCreatePlayerTarget(team);
+                                    setCreatePlayerOpen(true);
+                                  }}
+                                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  Add Player
+                                </button>
+                              )}
+                            </div>
+                          </div>
                           {loading ? (
                             <div className="flex items-center justify-center py-12 gap-2 text-muted">
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -582,21 +691,45 @@ export default function CreateMatchPage() {
                           ) : players.length === 0 ? (
                             <div className="text-center py-12 bg-white/5 border border-white/10 rounded-xl">
                               <Users className="w-8 h-8 text-muted mx-auto mb-2 opacity-50" />
-                              <p className="text-sm text-muted">
-                                {teamId ? "No players found for this team" : "Select a team first"}
+                              <p className="text-sm text-muted mb-3">
+                                {teamId
+                                  ? "No players found for this team"
+                                  : "Select a team first"}
                               </p>
+                              {teamId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCreatePlayerTarget(team);
+                                    setCreatePlayerOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  Add Player
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
                               {players.map((player) => {
                                 const isSelected = selected.includes(player.id);
+                                const isCaptain = captain === player.id;
                                 return (
-                                  <motion.button
+                                   <motion.div
                                     key={player.id}
+                                    role="button"
+                                    tabIndex={0}
                                     whileTap={{ scale: 0.97 }}
                                     onClick={() => togglePlayer(team, player.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        togglePlayer(team, player.id);
+                                      }
+                                    }}
                                     className={cn(
-                                      "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                                      "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left cursor-pointer",
                                       isSelected
                                         ? "bg-primary/20 border-primary"
                                         : "bg-white/5 border-white/10 hover:bg-white/8"
@@ -604,7 +737,7 @@ export default function CreateMatchPage() {
                                   >
                                     <div
                                       className={cn(
-                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0",
                                         isSelected
                                           ? "border-primary bg-primary"
                                           : "border-white/20"
@@ -614,15 +747,46 @@ export default function CreateMatchPage() {
                                         <Check className="w-3 h-3 text-white" />
                                       )}
                                     </div>
-                                    <div>
-                                      <p className="text-white text-sm">
-                                        {player.name}
-                                      </p>
-                                      <p className="text-xs text-muted">
-                                        {player.role}
-                                      </p>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-white text-sm truncate">
+                                          {player.name}
+                                        </p>
+                                        {isCaptain && (
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                            <Shield className="w-2.5 h-2.5" />
+                                            C
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 text-xs text-muted">
+                                        {player.role && <span>{player.role}</span>}
+                                        {player.shortName && <span>#{player.shortName}</span>}
+                                      </div>
                                     </div>
-                                  </motion.button>
+                                    {isSelected && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (captain === player.id) {
+                                            updateForm(setCaptainField, "");
+                                          } else {
+                                            updateForm(setCaptainField, player.id);
+                                          }
+                                        }}
+                                        className={cn(
+                                          "p-1.5 rounded-lg transition-colors flex-shrink-0",
+                                          isCaptain
+                                            ? "bg-yellow-400/20 text-yellow-400"
+                                            : "bg-white/5 text-muted hover:text-yellow-400"
+                                        )}
+                                        title={isCaptain ? "Remove as captain" : "Make captain"}
+                                      >
+                                        <Shield className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                   </motion.div>
                                 );
                               })}
                             </div>
@@ -775,6 +939,13 @@ export default function CreateMatchPage() {
                         value: `${formData.playersA.length} vs ${formData.playersB.length} selected`,
                       },
                       {
+                        label: "Captains",
+                        value: [
+                          formData.captainA ? `${teamName(formData.teamA)}: ${playersA.find(p => p.id === formData.captainA)?.name || "Not set"}` : null,
+                          formData.captainB ? `${teamName(formData.teamB)}: ${playersB.find(p => p.id === formData.captainB)?.name || "Not set"}` : null,
+                        ].filter(Boolean).join(", ") || "Not set",
+                      },
+                      {
                         label: "Toss",
                         value: formData.tossWinner
                           ? `${teamName(formData.tossWinner)} chose to ${formData.tossDecision}`
@@ -856,6 +1027,22 @@ export default function CreateMatchPage() {
           </div>
         </div>
       </div>
+
+      <CreateTeamModal
+        isOpen={createTeamOpen}
+        onClose={() => setCreateTeamOpen(false)}
+        onTeamCreated={handleTeamCreated}
+      />
+
+      {createPlayerOpen && (createPlayerTarget === "A" ? formData.teamA : formData.teamB) && (
+        <CreatePlayerModal
+          isOpen={createPlayerOpen}
+          onClose={() => setCreatePlayerOpen(false)}
+          teamId={createPlayerTarget === "A" ? formData.teamA : formData.teamB}
+          teamName={teamName(createPlayerTarget === "A" ? formData.teamA : formData.teamB)}
+          onPlayerCreated={handlePlayerCreated}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-options";
 
 export interface AuthPayload extends JWTPayload {
   sub: string;
@@ -29,10 +31,21 @@ export async function verifyToken<T extends JWTPayload = AuthPayload>(
 
 export async function getCurrentUser(): Promise<AuthPayload | null> {
   try {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.id && session?.user?.email) {
+      return {
+        sub: session.user.id,
+        email: session.user.email,
+        name: session.user.name ?? undefined,
+        role: (session.user.role as string) ?? "VIEWER",
+      };
+    }
+
     const cookieStore = await cookies();
     const token =
       cookieStore.get("token")?.value ??
-      cookieStore.get("next-auth.session-token")?.value;
+      cookieStore.get("next-auth.session-token")?.value ??
+      cookieStore.get("__Secure-next-auth.session-token")?.value;
 
     if (!token) return null;
 

@@ -1,17 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { DynamicLineChart } from "@/components/ui/DynamicCharts";
 import { cn } from "@/lib/utils";
 import { TrendingUp, BarChart3, Target, Loader2 } from "lucide-react";
 import type { Match, Innings, BowlingScorecard, BattingScorecard } from "@/types";
@@ -31,28 +23,6 @@ interface ComputedStats {
   totalWickets: number;
   totalDots: number;
 }
-
-const CustomTooltip = ({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ value: number; name: string; color: string }>;
-  label?: string;
-}) => {
-  if (!active || !payload) return null;
-  return (
-    <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl p-3 text-sm">
-      <p className="text-white font-medium mb-1">{label}</p>
-      {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }} className="text-xs">
-          {p.name}: {p.value}
-        </p>
-      ))}
-    </div>
-  );
-};
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -93,17 +63,11 @@ function computeStats(match: Match & { innings: (Innings & { battingCard: (Batti
     }
 
     for (const bs of inn.bowlingCard || []) {
-      allBowlingStats.push({
-        ...bs,
-        playerName: bs.player.name,
-      });
+      allBowlingStats.push({ ...bs, playerName: bs.player.name });
     }
 
     for (const bt of inn.battingCard || []) {
-      allBattingStats.push({
-        ...bt,
-        playerName: bt.player.name,
-      });
+      allBattingStats.push({ ...bt, playerName: bt.player.name });
       totalFours += bt.fours || 0;
       totalSixes += bt.sixes || 0;
       totalDots += bt.balls - bt.runs - (bt.fours || 0) * 4 - (bt.sixes || 0) * 6;
@@ -133,9 +97,7 @@ function ComingSoonCard({ title, icon }: { title: string; icon: React.ReactNode 
         {icon}
         <h3 className="font-semibold text-white">{title}</h3>
       </div>
-      <div className="flex items-center justify-center h-[250px] text-muted text-sm">
-        Coming soon
-      </div>
+      <div className="flex items-center justify-center h-[250px] text-muted text-sm">Coming soon</div>
     </div>
   );
 }
@@ -144,29 +106,18 @@ export default function StatisticsPage() {
   const params = useParams();
   const matchId = params.matchId as string;
 
-  const [match, setMatch] = useState<(Match & { innings: Innings[] }) | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["match", matchId],
+    queryFn: async () => {
+      const res = await fetch(`/api/matches/${matchId}`);
+      if (!res.ok) throw new Error("Failed to fetch match");
+      return res.json() as Promise<{ match: Match & { innings: Innings[] } }>;
+    },
+  });
 
-  useEffect(() => {
-    if (!matchId) return;
-    setLoading(true);
-    fetch(`/api/matches/${matchId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch match");
-        return res.json();
-      })
-      .then((data) => {
-        setMatch(data.match);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setLoading(false);
-      });
-  }, [matchId]);
+  const match = data?.match;
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[400px]">
         <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -177,7 +128,7 @@ export default function StatisticsPage() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-[400px]">
-        <p className="text-danger text-sm">{error}</p>
+        <p className="text-danger text-sm">{error.message}</p>
       </div>
     );
   }
@@ -186,9 +137,7 @@ export default function StatisticsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-[400px] text-center">
         <BarChart3 className="w-12 h-12 text-muted/40 mb-4" />
-        <p className="text-muted text-sm">
-          No statistics available yet. Statistics will appear once the match has innings data.
-        </p>
+        <p className="text-muted text-sm">No statistics available yet. Statistics will appear once the match has innings data.</p>
       </div>
     );
   }
@@ -196,119 +145,58 @@ export default function StatisticsPage() {
   const stats = computeStats(match as Parameters<typeof computeStats>[0]);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="show"
-      className="space-y-6"
-    >
-      <motion.div
-        variants={itemVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-      >
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-6">
+      <motion.div variants={itemVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-5 h-5 text-accent" />
           <h3 className="font-semibold text-white">Run Rate</h3>
         </div>
         {stats.runRateData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={stats.runRateData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="over" stroke="#94A3B8" fontSize={12} />
-              <YAxis stroke="#94A3B8" fontSize={12} />
-              <Tooltip content={<CustomTooltip />} />
-              <Line
-                type="monotone"
-                dataKey="runRate"
-                stroke="#00D4FF"
-                strokeWidth={2}
-                dot={{ fill: "#00D4FF", r: 3 }}
-                name="CRR"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <DynamicLineChart data={stats.runRateData} dataKey="runRate" stroke="#00D4FF" name="CRR" />
         ) : (
-          <div className="flex items-center justify-center h-[250px] text-muted text-sm">
-            No over data available
-          </div>
+          <div className="flex items-center justify-center h-[250px] text-muted text-sm">No over data available</div>
         )}
       </motion.div>
 
-      <ComingSoonCard
-        title="Partnerships"
-        icon={<BarChart3 className="w-5 h-5 text-primary" />}
-      />
-
-      <ComingSoonCard
-        title="Match Worm"
-        icon={<TrendingUp className="w-5 h-5 text-success" />}
-      />
-
-      <ComingSoonCard
-        title="Manhattan"
-        icon={<BarChart3 className="w-5 h-5 text-warning" />}
-      />
+      <ComingSoonCard title="Partnerships" icon={<BarChart3 className="w-5 h-5 text-primary" />} />
+      <ComingSoonCard title="Match Worm" icon={<TrendingUp className="w-5 h-5 text-success" />} />
+      <ComingSoonCard title="Manhattan" icon={<BarChart3 className="w-5 h-5 text-warning" />} />
 
       <div className="grid md:grid-cols-2 gap-6">
-        <ComingSoonCard
-          title="Run Distribution"
-          icon={<BarChart3 className="w-5 h-5 text-accent" />}
-        />
-        <ComingSoonCard
-          title="Wagon Wheel"
-          icon={<Target className="w-5 h-5 text-danger" />}
-        />
+        <ComingSoonCard title="Run Distribution" icon={<BarChart3 className="w-5 h-5 text-accent" />} />
+        <ComingSoonCard title="Wagon Wheel" icon={<Target className="w-5 h-5 text-danger" />} />
       </div>
 
-      <motion.div
-        variants={itemVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-      >
+      <motion.div variants={itemVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-white">Quick Stats</h3>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{stats.totalFours}</p>
-            <p className="text-xs text-muted">Fours</p>
-          </div>
-          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-accent">{stats.totalSixes}</p>
-            <p className="text-xs text-muted">Sixes</p>
-          </div>
-          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-danger">{stats.totalWickets}</p>
-            <p className="text-xs text-muted">Wickets</p>
-          </div>
-          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-success">{stats.totalDots}</p>
-            <p className="text-xs text-muted">Dot Balls</p>
-          </div>
+          {[
+            { label: "Fours", value: stats.totalFours, color: "text-primary" },
+            { label: "Sixes", value: stats.totalSixes, color: "text-accent" },
+            { label: "Wickets", value: stats.totalWickets, color: "text-danger" },
+            { label: "Dot Balls", value: stats.totalDots, color: "text-success" },
+          ].map((stat) => (
+            <div key={stat.label} className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
+              <p className={cn("text-2xl font-bold", stat.color)}>{stat.value}</p>
+              <p className="text-xs text-muted">{stat.label}</p>
+            </div>
+          ))}
         </div>
       </motion.div>
 
       {stats.battingStats.length > 0 && (
-        <motion.div
-          variants={itemVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-        >
+        <motion.div variants={itemVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
           <h3 className="font-semibold text-white mb-4">Top Batsmen</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {stats.battingStats.slice(0, 8).map((b) => (
-              <div
-                key={b.id}
-                className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center"
-              >
+              <div key={b.id} className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
                 <p className="text-sm text-white font-medium mb-1">{b.playerName}</p>
                 <p className="text-lg font-bold text-accent">
-                  {b.runs}{" "}
-                  <span className="text-xs text-muted font-normal">
-                    ({b.balls}){b.isNotOut ? "*" : ""}
-                  </span>
+                  {b.runs} <span className="text-xs text-muted font-normal">({b.balls}){b.isNotOut ? "*" : ""}</span>
                 </p>
-                <p className="text-xs text-muted">
-                  SR {b.strikeRate?.toFixed(1) || "0.0"} &middot; {b.fours}x4 {b.sixes}x6
-                </p>
+                <p className="text-xs text-muted">SR {b.strikeRate?.toFixed(1) || "0.0"} &middot; {b.fours}x4 {b.sixes}x6</p>
               </div>
             ))}
           </div>
@@ -316,24 +204,16 @@ export default function StatisticsPage() {
       )}
 
       {stats.bowlingStats.length > 0 && (
-        <motion.div
-          variants={itemVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-        >
+        <motion.div variants={itemVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
           <h3 className="font-semibold text-white mb-4">Bowling Analysis</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {stats.bowlingStats.map((b) => (
-              <div
-                key={b.id}
-                className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center"
-              >
+              <div key={b.id} className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
                 <p className="text-sm text-white font-medium mb-1">{b.playerName}</p>
                 <p className="text-lg font-bold text-danger">{b.wickets}</p>
                 <p className="text-xs text-muted">wickets</p>
                 <div className="mt-2 pt-2 border-t border-white/5">
-                  <p className="text-xs text-muted">
-                    {b.runs} runs &middot; {b.dotBalls} dots
-                  </p>
+                  <p className="text-xs text-muted">{b.runs} runs &middot; {b.dotBalls} dots</p>
                 </div>
               </div>
             ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -10,8 +10,8 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
-  Loader2,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
 const tabs = ["All", "Live", "Upcoming", "Completed"] as const;
@@ -31,26 +31,15 @@ interface Match {
   venue: string;
 }
 
-interface Pagination {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
+interface PaginatedResponse {
+  matches: Match[];
+  pagination: { total: number; page: number; limit: number; totalPages: number };
 }
 
 const statusMap: Record<string, { label: string; className: string }> = {
-  LIVE: {
-    label: "LIVE",
-    className: "text-success",
-  },
-  SCHEDULED: {
-    label: "Upcoming",
-    className: "text-primary",
-  },
-  COMPLETED: {
-    label: "Completed",
-    className: "text-muted",
-  },
+  LIVE: { label: "LIVE", className: "text-success" },
+  SCHEDULED: { label: "Upcoming", className: "text-primary" },
+  COMPLETED: { label: "Completed", className: "text-muted" },
 };
 
 const container = {
@@ -74,48 +63,34 @@ function formatDate(dateStr: string) {
 export default function MatchesPage() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("All");
   const [search, setSearch] = useState("");
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
-    total: 0,
-    page: 1,
-    limit: 20,
-    totalPages: 1,
-  });
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
 
-  const fetchMatches = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: "20",
-    });
-
-    if (activeTab === "Live") params.set("status", "LIVE");
-    else if (activeTab === "Upcoming") params.set("status", "SCHEDULED");
-    else if (activeTab === "Completed") params.set("status", "COMPLETED");
-
-    if (search) params.set("search", search);
-
-    try {
+  const { data, isLoading } = useQuery<PaginatedResponse>({
+    queryKey: ["matches", { tab: activeTab, search, page }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), limit: "20" });
+      if (activeTab === "Live") params.set("status", "LIVE");
+      else if (activeTab === "Upcoming") params.set("status", "SCHEDULED");
+      else if (activeTab === "Completed") params.set("status", "COMPLETED");
+      if (search) params.set("search", search);
       const res = await fetch(`/api/matches?${params}`);
-      const data = await res.json();
-      setMatches(data.matches || []);
-      setPagination(data.pagination || { total: 0, page: 1, limit: 20, totalPages: 1 });
-    } catch {
-      setMatches([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab, search, page]);
+      if (!res.ok) throw new Error("Failed to fetch matches");
+      return res.json();
+    },
+  });
 
-  useEffect(() => {
-    fetchMatches();
-  }, [fetchMatches]);
+  const matches = data?.matches ?? [];
+  const pagination = data?.pagination ?? { total: 0, page: 1, limit: 20, totalPages: 1 };
 
-  useEffect(() => {
+  function handleTabChange(tab: (typeof tabs)[number]) {
+    setActiveTab(tab);
     setPage(1);
-  }, [activeTab, search]);
+  }
+
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    setPage(1);
+  }
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -135,7 +110,7 @@ export default function MatchesPage() {
           {tabs.map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => handleTabChange(tab)}
               className={cn(
                 "rounded-lg px-4 py-2 text-sm font-medium transition-all",
                 activeTab === tab
@@ -153,15 +128,29 @@ export default function MatchesPage() {
             type="text"
             placeholder="Search matches..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="w-full sm:w-64 rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-4 text-sm text-foreground placeholder-muted outline-none transition-all focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
           />
         </div>
       </motion.div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="glass-card animate-pulse rounded-2xl p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="h-5 w-14 rounded-full bg-white/5" />
+                <div className="h-4 w-20 rounded bg-white/5" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-4 w-24 rounded bg-white/5" />
+                <div className="h-4 w-24 rounded bg-white/5" />
+              </div>
+              <div className="mt-3 border-t border-white/5 pt-3">
+                <div className="h-3 w-32 rounded bg-white/5" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : matches.length === 0 ? (
         <motion.div variants={item} className="flex flex-col items-center justify-center py-20 text-center">
@@ -173,56 +162,53 @@ export default function MatchesPage() {
         </motion.div>
       ) : (
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {matches.map((match) => {
-            const status = statusMap[match.status] || statusMap.COMPLETED;
-            return (
-              <motion.div key={match.id} variants={item}>
-                <Link href={`/matches/${match.id}`}>
-                  <div className="glass-card group rounded-2xl p-5 transition-all hover:border-white/15 cursor-pointer">
-                    <div className="mb-3 flex items-center justify-between">
-                      {match.status === "LIVE" ? (
-                        <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
-                          <span className="relative flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-                          </span>
-                          LIVE
+          {matches.map((match) => (
+            <motion.div key={match.id} variants={item}>
+              <Link href={`/matches/${match.id}`}>
+                <div className="glass-card group rounded-2xl p-5 transition-all hover:border-white/15 cursor-pointer">
+                  <div className="mb-3 flex items-center justify-between">
+                    {match.status === "LIVE" ? (
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
                         </span>
-                      ) : match.status === "SCHEDULED" ? (
-                        <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                          Upcoming
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-muted/10 px-2.5 py-0.5 text-xs font-semibold text-muted">
-                          Completed
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1 text-xs text-muted">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(match.scheduledAt)}
+                        LIVE
                       </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-foreground">{match.homeTeam.shortName}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-foreground">{match.awayTeam.shortName}</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
-                      <span className="flex items-center gap-1 text-xs text-muted">
-                        <MapPin className="h-3 w-3" />
-                        {match.venue}
+                    ) : match.status === "SCHEDULED" ? (
+                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                        Upcoming
                       </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-muted/10 px-2.5 py-0.5 text-xs font-semibold text-muted">
+                        Completed
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-xs text-muted">
+                      <Calendar className="h-3 w-3" />
+                      {formatDate(match.scheduledAt)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">{match.homeTeam.shortName}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">{match.awayTeam.shortName}</span>
                     </div>
                   </div>
-                </Link>
-              </motion.div>
-            );
-          })}
+
+                  <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
+                    <span className="flex items-center gap-1 text-xs text-muted">
+                      <MapPin className="h-3 w-3" />
+                      {match.venue}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            </motion.div>
+          ))}
         </motion.div>
       )}
 

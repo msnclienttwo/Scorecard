@@ -3,6 +3,8 @@
 import { SessionProvider, useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import QueryProvider from "./QueryProvider";
+import { ToastContainer } from "./ui/Toast";
 
 function SessionHydrator({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -35,8 +37,11 @@ function SessionHydrator({ children }: { children: React.ReactNode }) {
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
-      <SessionHydrator>{children}</SessionHydrator>
-    </SessionProvider>
+    <QueryProvider>
+      <SessionProvider>
+        <SessionHydrator>{children}</SessionHydrator>
+        <ToastContainer />
+      </SessionProvider>
+    </QueryProvider>
   );
 }

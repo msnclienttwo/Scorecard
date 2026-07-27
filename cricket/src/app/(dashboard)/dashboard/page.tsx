@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -9,11 +8,9 @@ import {
   Users,
   UserPlus,
   PlusCircle,
-  TrendingUp,
-  TrendingDown,
   ArrowRight,
-  Zap,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -43,50 +40,49 @@ function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-lg bg-white/5", className)} />;
 }
 
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch failed: ${url}`);
+  return res.json();
+}
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
 
-  const [totalMatches, setTotalMatches] = useState(0);
-  const [liveCount, setLiveCount] = useState(0);
-  const [teamCount, setTeamCount] = useState(0);
-  const [playerCount, setPlayerCount] = useState(0);
-  const [liveMatches, setLiveMatches] = useState<MatchData[]>([]);
-  const [recentMatches, setRecentMatches] = useState<MatchData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const matchesQuery = useQuery({
+    queryKey: ["dashboard", "matches-count"],
+    queryFn: () => fetchJson<{ pagination?: { total?: number } }>("/api/matches?limit=1"),
+  });
 
-  useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const [matchesRes, liveRes, recentRes, teamsRes, playersRes] =
-          await Promise.all([
-            fetch("/api/matches?limit=1"),
-            fetch("/api/matches?status=LIVE&limit=10"),
-            fetch("/api/matches?status=COMPLETED&limit=5"),
-            fetch("/api/teams?limit=1"),
-            fetch("/api/players?limit=1"),
-          ]);
+  const liveQuery = useQuery({
+    queryKey: ["dashboard", "live-matches"],
+    queryFn: () => fetchJson<{ matches?: MatchData[]; pagination?: { total?: number } }>("/api/matches?status=LIVE&limit=10"),
+    refetchInterval: 30_000,
+  });
 
-        const matchesData = await matchesRes.json();
-        const liveData = await liveRes.json();
-        const recentData = await recentRes.json();
-        const teamsData = await teamsRes.json();
-        const playersData = await playersRes.json();
+  const recentQuery = useQuery({
+    queryKey: ["dashboard", "recent-matches"],
+    queryFn: () => fetchJson<{ matches?: MatchData[] }>("/api/matches?status=COMPLETED&limit=5"),
+  });
 
-        setTotalMatches(matchesData.pagination?.total ?? 0);
-        setLiveCount(liveData.pagination?.total ?? 0);
-        setLiveMatches(liveData.matches ?? []);
-        setRecentMatches(recentData.matches ?? []);
-        setTeamCount(teamsData.pagination?.total ?? 0);
-        setPlayerCount(playersData.pagination?.total ?? 0);
-      } catch (error) {
-        console.error("Failed to load dashboard:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  const teamsQuery = useQuery({
+    queryKey: ["dashboard", "teams-count"],
+    queryFn: () => fetchJson<{ pagination?: { total?: number } }>("/api/teams?limit=1"),
+  });
 
-    fetchDashboard();
-  }, []);
+  const playersQuery = useQuery({
+    queryKey: ["dashboard", "players-count"],
+    queryFn: () => fetchJson<{ pagination?: { total?: number } }>("/api/players?limit=1"),
+  });
+
+  const loading = matchesQuery.isLoading || liveQuery.isLoading || recentQuery.isLoading;
+
+  const totalMatches = matchesQuery.data?.pagination?.total ?? 0;
+  const liveCount = liveQuery.data?.pagination?.total ?? 0;
+  const liveMatches = liveQuery.data?.matches ?? [];
+  const recentMatches = recentQuery.data?.matches ?? [];
+  const teamCount = teamsQuery.data?.pagination?.total ?? 0;
+  const playerCount = playersQuery.data?.pagination?.total ?? 0;
 
   const stats = [
     {
@@ -255,7 +251,7 @@ export default function DashboardPage() {
                             {match.homeTeam.name} vs {match.awayTeam.name}
                           </td>
                           <td className="whitespace-nowrap px-5 py-3 text-sm text-foreground/80">
-                            {match.result || "—"}
+                            {match.result || "\u2014"}
                           </td>
                           <td className="whitespace-nowrap px-5 py-3">
                             <span className="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success">
@@ -273,10 +269,7 @@ export default function DashboardPage() {
       <motion.div variants={item}>
         <h2 className="mb-4 text-lg font-semibold text-foreground">Quick Actions</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Link
-            href="/matches/create"
-            className="glass-card group flex items-center gap-4 rounded-2xl p-5"
-          >
+          <Link href="/matches/create" className="glass-card group flex items-center gap-4 rounded-2xl p-5">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/20">
               <PlusCircle className="h-6 w-6 text-primary" />
             </div>
@@ -285,10 +278,7 @@ export default function DashboardPage() {
               <p className="text-xs text-muted">Start a new match</p>
             </div>
           </Link>
-          <Link
-            href="/teams"
-            className="glass-card group flex items-center gap-4 rounded-2xl p-5"
-          >
+          <Link href="/teams" className="glass-card group flex items-center gap-4 rounded-2xl p-5">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 transition-colors group-hover:bg-accent/20">
               <Users className="h-6 w-6 text-accent" />
             </div>
@@ -297,10 +287,7 @@ export default function DashboardPage() {
               <p className="text-xs text-muted">Register a new team</p>
             </div>
           </Link>
-          <Link
-            href="/players"
-            className="glass-card group flex items-center gap-4 rounded-2xl p-5"
-          >
+          <Link href="/players" className="glass-card group flex items-center gap-4 rounded-2xl p-5">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success/10 transition-colors group-hover:bg-success/20">
               <UserPlus className="h-6 w-6 text-success" />
             </div>

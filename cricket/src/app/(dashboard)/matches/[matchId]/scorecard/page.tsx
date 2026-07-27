@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { AlertCircle, Loader2 } from "lucide-react";
 
@@ -62,12 +63,7 @@ interface Innings {
   battingCard: BattingCard[];
   bowlingCard: BowlingCard[];
   fallOfWickets: FallOfWicket[];
-  overs: Array<{
-    id: string;
-    overNumber: number;
-    totalRuns: number;
-    extras: number;
-  }>;
+  overs: Array<{ id: string; overNumber: number; totalRuns: number; extras: number }>;
 }
 
 interface Match {
@@ -76,7 +72,6 @@ interface Match {
   homeTeam: { id: string; name: string };
   awayTeam: { id: string; name: string };
   totalOvers: number;
-  innings: Innings[];
 }
 
 function getDismissalText(card: BattingCard): string {
@@ -85,7 +80,7 @@ function getDismissalText(card: BattingCard): string {
     const type = card.dismissalType.replace(/_/g, " ").toLowerCase();
     return type.charAt(0).toUpperCase() + type.slice(1);
   }
-  return "—";
+  return "\u2014";
 }
 
 function getExtrasBreakdown(innings: Innings) {
@@ -93,12 +88,11 @@ function getExtrasBreakdown(innings: Innings) {
   const noBalls = innings.bowlingCard.reduce((s, b) => s + b.noBalls, 0);
   const total = innings.extras;
   const byes = Math.max(0, total - wides - noBalls);
-  const legByes = 0;
   return [
     { type: "Wides", count: wides },
     { type: "No Balls", count: noBalls },
     { type: "Byes", count: byes },
-    { type: "Leg Byes", count: legByes },
+    { type: "Leg Byes", count: 0 },
   ].filter((e) => e.count > 0);
 }
 
@@ -115,42 +109,29 @@ const rowVariants = {
 export default function ScorecardPage() {
   const params = useParams();
   const matchId = params.matchId as string;
-
-  const [match, setMatch] = useState<Match | null>(null);
-  const [innings, setInnings] = useState<Innings[]>([]);
   const [activeInnings, setActiveInnings] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [matchRes, inningsRes] = await Promise.all([
-        fetch(`/api/matches/${matchId}`),
-        fetch(`/api/matches/${matchId}/innings`),
-      ]);
+  const matchQuery = useQuery({
+    queryKey: ["match", matchId],
+    queryFn: async () => {
+      const res = await fetch(`/api/matches/${matchId}`);
+      if (!res.ok) throw new Error("Failed to fetch match");
+      return res.json() as Promise<{ match: Match }>;
+    },
+  });
 
-      if (!matchRes.ok) {
-        const data = await matchRes.json();
-        throw new Error(data.error || "Failed to fetch match");
-      }
+  const inningsQuery = useQuery({
+    queryKey: ["innings", matchId],
+    queryFn: async () => {
+      const res = await fetch(`/api/matches/${matchId}/innings`);
+      if (!res.ok) return { innings: [] };
+      return res.json() as Promise<{ innings: Innings[] }>;
+    },
+  });
 
-      const matchData = await matchRes.json();
-      setMatch(matchData.match);
-
-      if (inningsRes.ok) {
-        const innData = await inningsRes.json();
-        setInnings(innData.innings ?? []);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load scorecard");
-    } finally {
-      setLoading(false);
-    }
-  }, [matchId]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const match = matchQuery.data?.match;
+  const innings = inningsQuery.data?.innings ?? [];
+  const loading = matchQuery.isLoading || inningsQuery.isLoading;
 
   if (loading) {
     return (
@@ -163,12 +144,12 @@ export default function ScorecardPage() {
     );
   }
 
-  if (error) {
+  if (matchQuery.error) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3 text-center">
           <AlertCircle className="w-10 h-10 text-danger" />
-          <p className="text-sm text-danger">{error}</p>
+          <p className="text-sm text-danger">{matchQuery.error.message}</p>
         </div>
       </div>
     );
@@ -189,18 +170,12 @@ export default function ScorecardPage() {
   const totalExtras = extrasBreakdown.reduce((s, e) => s + e.count, 0);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="show"
-      className="space-y-6"
-    >
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-6">
       <div className="flex gap-2 overflow-x-auto pb-2">
         {innings.map((inn, idx) => {
-          const teamName =
-            inn.inningsNumber === 1
-              ? match?.homeTeam.name ?? inn.battingTeam
-              : match?.awayTeam.name ?? inn.battingTeam;
+          const teamName = inn.inningsNumber === 1
+            ? match?.homeTeam.name ?? inn.battingTeam
+            : match?.awayTeam.name ?? inn.battingTeam;
           return (
             <motion.button
               key={inn.id}
@@ -213,16 +188,13 @@ export default function ScorecardPage() {
                   : "bg-white/5 text-muted border border-white/10"
               )}
             >
-              {teamName} — {inn.totalRuns}/{inn.totalWickets}
+              {teamName} \u2014 {inn.totalRuns}/{inn.totalWickets}
             </motion.button>
           );
         })}
       </div>
 
-      <motion.div
-        variants={rowVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-      >
+      <motion.div variants={rowVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-lg font-bold text-white">
             {innings[activeInnings].battingTeam || match?.homeTeam.name || "Batting Team"}
@@ -233,17 +205,11 @@ export default function ScorecardPage() {
         </div>
         <p className="text-sm text-muted">
           Overs: {current.totalOvers} &middot; Extras: {current.extras} &middot;
-          RR:{" "}
-          {current.totalOvers > 0
-            ? (current.totalRuns / current.totalOvers).toFixed(2)
-            : "0.00"}
+          RR: {current.totalOvers > 0 ? (current.totalRuns / current.totalOvers).toFixed(2) : "0.00"}
         </p>
       </motion.div>
 
-      <motion.div
-        variants={rowVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden"
-      >
+      <motion.div variants={rowVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-white/10">
           <h3 className="font-semibold text-white">Batting</h3>
         </div>
@@ -251,52 +217,23 @@ export default function ScorecardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5">
-                <th className="px-4 py-3 text-left text-xs text-muted font-medium">
-                  Batsman
-                </th>
-                <th className="px-4 py-3 text-left text-xs text-muted font-medium">
-                  Dismissal
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  R
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  B
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  4s
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  6s
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  SR
-                </th>
+                {["Batsman", "Dismissal", "R", "B", "4s", "6s", "SR"].map((h) => (
+                  <th key={h} className={cn("px-4 py-3 text-xs text-muted font-medium", h === "Batsman" || h === "Dismissal" ? "text-left" : "text-right")}>
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {[...current.battingCard].sort((a, b) => (a.batPosition ?? 0) - (b.batPosition ?? 0)).map((b) => (
-                <tr
-                  key={b.id}
-                  className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <span className="text-white font-medium">
-                      {b.player.name}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted text-xs">
-                    {getDismissalText(b)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-white font-semibold">
-                    {b.runs}
-                  </td>
+                <tr key={b.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                  <td className="px-4 py-3"><span className="text-white font-medium">{b.player.name}</span></td>
+                  <td className="px-4 py-3 text-muted text-xs">{getDismissalText(b)}</td>
+                  <td className="px-4 py-3 text-right text-white font-semibold">{b.runs}</td>
                   <td className="px-4 py-3 text-right text-muted">{b.balls}</td>
                   <td className="px-4 py-3 text-right text-muted">{b.fours}</td>
                   <td className="px-4 py-3 text-right text-muted">{b.sixes}</td>
-                  <td className="px-4 py-3 text-right text-accent">
-                    {b.strikeRate.toFixed(2)}
-                  </td>
+                  <td className="px-4 py-3 text-right text-accent">{b.strikeRate.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -304,10 +241,7 @@ export default function ScorecardPage() {
         </div>
       </motion.div>
 
-      <motion.div
-        variants={rowVariants}
-        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden"
-      >
+      <motion.div variants={rowVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-white/10">
           <h3 className="font-semibold text-white">Bowling</h3>
         </div>
@@ -315,58 +249,24 @@ export default function ScorecardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5">
-                <th className="px-4 py-3 text-left text-xs text-muted font-medium">
-                  Bowler
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  O
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  M
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  R
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  W
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  Econ
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  WD
-                </th>
-                <th className="px-4 py-3 text-right text-xs text-muted font-medium">
-                  NB
-                </th>
+                {["Bowler", "O", "M", "R", "W", "Econ", "WD", "NB"].map((h) => (
+                  <th key={h} className={cn("px-4 py-3 text-xs text-muted font-medium", h === "Bowler" ? "text-left" : "text-right")}>
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {[...current.bowlingCard].sort((a, b) => b.wickets - a.wickets).map((b) => (
-                <tr
-                  key={b.id}
-                  className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <span className="text-white font-medium">
-                      {b.player.name}
-                    </span>
-                  </td>
+                <tr key={b.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                  <td className="px-4 py-3"><span className="text-white font-medium">{b.player.name}</span></td>
                   <td className="px-4 py-3 text-right text-muted">{b.overs}</td>
-                  <td className="px-4 py-3 text-right text-muted">
-                    {b.maidens}
-                  </td>
+                  <td className="px-4 py-3 text-right text-muted">{b.maidens}</td>
                   <td className="px-4 py-3 text-right text-white">{b.runs}</td>
-                  <td className="px-4 py-3 text-right text-danger font-semibold">
-                    {b.wickets}
-                  </td>
-                  <td className="px-4 py-3 text-right text-accent">
-                    {b.economy.toFixed(2)}
-                  </td>
+                  <td className="px-4 py-3 text-right text-danger font-semibold">{b.wickets}</td>
+                  <td className="px-4 py-3 text-right text-accent">{b.economy.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right text-muted">{b.wides}</td>
-                  <td className="px-4 py-3 text-right text-muted">
-                    {b.noBalls}
-                  </td>
+                  <td className="px-4 py-3 text-right text-muted">{b.noBalls}</td>
                 </tr>
               ))}
             </tbody>
@@ -375,31 +275,20 @@ export default function ScorecardPage() {
       </motion.div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        <motion.div
-          variants={rowVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-        >
+        <motion.div variants={rowVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
           <h3 className="font-semibold text-white mb-4">Fall of Wickets</h3>
           <div className="space-y-3">
             {(current.fallOfWickets ?? []).length === 0 ? (
               <p className="text-sm text-muted">No wickets fallen yet</p>
             ) : (
               (current.fallOfWickets ?? []).map((fow) => (
-                <div
-                  key={fow.id}
-                  className="flex items-center gap-3"
-                >
+                <div key={fow.id} className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center text-xs text-danger font-bold">
                     {fow.wicketNumber}
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm text-white">
-                      {fow.batterName || "Batsman"}
-                    </p>
-                    <p className="text-xs text-muted">
-                      Score: {fow.runs}/{fow.wicketNumber} &middot; Over:{" "}
-                      {fow.overs}
-                    </p>
+                    <p className="text-sm text-white">{fow.batterName || "Batsman"}</p>
+                    <p className="text-xs text-muted">Score: {fow.runs}/{fow.wicketNumber} &middot; Over: {fow.overs}</p>
                   </div>
                 </div>
               ))
@@ -407,30 +296,18 @@ export default function ScorecardPage() {
           </div>
         </motion.div>
 
-        <motion.div
-          variants={rowVariants}
-          className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6"
-        >
+        <motion.div variants={rowVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
           <h3 className="font-semibold text-white mb-4">Extras</h3>
           <div className="space-y-3">
             {extrasBreakdown.map((e) => (
-              <div
-                key={e.type}
-                className="flex items-center justify-between py-2 border-b border-white/5"
-              >
+              <div key={e.type} className="flex items-center justify-between py-2 border-b border-white/5">
                 <span className="text-sm text-muted">{e.type}</span>
-                <span className="text-sm text-white font-semibold">
-                  {e.count}
-                </span>
+                <span className="text-sm text-white font-semibold">{e.count}</span>
               </div>
             ))}
             <div className="flex items-center justify-between pt-2">
-              <span className="text-sm text-white font-medium">
-                Total Extras
-              </span>
-              <span className="text-sm text-accent font-bold">
-                {totalExtras}
-              </span>
+              <span className="text-sm text-white font-medium">Total Extras</span>
+              <span className="text-sm text-accent font-bold">{totalExtras}</span>
             </div>
           </div>
         </motion.div>

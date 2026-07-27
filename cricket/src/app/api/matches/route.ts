@@ -75,7 +75,8 @@ export async function POST(request: NextRequest) {
       scheduledAt,
       totalOvers,
       tossWinner,
-      tossDecision
+      tossDecision,
+      umpires,
     } = body
 
     if (!homeTeamId || !awayTeamId) {
@@ -104,20 +105,50 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const validFormats = ['T20', 'ODI', 'TEST', 'T10', 'CUSTOM']
+    const matchFormat = (format || 'T20').toUpperCase()
+    if (!validFormats.includes(matchFormat)) {
+      return NextResponse.json(
+        { error: `Invalid format "${format}". Must be one of: ${validFormats.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    const validTossDecisions = ['BAT', 'BOWL']
+    const resolvedTossDecision = tossDecision
+      ? tossDecision.toUpperCase()
+      : null
+    if (resolvedTossDecision && !validTossDecisions.includes(resolvedTossDecision)) {
+      return NextResponse.json(
+        { error: `Invalid toss decision "${tossDecision}". Must be "bat" or "bowl"` },
+        { status: 400 }
+      )
+    }
+
+    const resolvedTossWinner = tossWinner || null
+
+    const umpireArray: string[] = Array.isArray(umpires)
+      ? umpires.filter((u: string) => u && u.trim())
+      : []
+
     const match = await prisma.match.create({
       data: {
         name: name || `${teamA.name} vs ${teamB.name}`,
-        description,
-        format: format || 'T20',
+        description: description || null,
+        format: matchFormat as 'T20' | 'ODI' | 'TEST' | 'T10' | 'CUSTOM',
         totalOvers: totalOvers || 20,
         status: 'SCHEDULED',
         scheduledAt: scheduledAt ? new Date(scheduledAt) : new Date(),
-        venue: venue || '',
-        tossWinner: tossWinner || null,
-        tossDecision: tossDecision || null,
+        venue: venue || null,
+        tossWinner: resolvedTossWinner,
+        tossDecision: resolvedTossDecision as 'BAT' | 'BOWL' | null,
         homeTeamId,
         awayTeamId,
         tournamentId: tournamentId || null,
+        umpire1: umpireArray[0] || null,
+        umpire2: umpireArray[1] || null,
+        thirdUmpire: umpireArray[2] || null,
+        reserveUmpire: umpireArray[3] || null,
         createdBy: user.sub
       },
       include: {
@@ -129,8 +160,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ match }, { status: 201 })
   } catch (error) {
     console.error('Error creating match:', error)
+    const message =
+      error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: message },
       { status: 500 }
     )
   }

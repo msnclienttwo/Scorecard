@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Bell,
@@ -9,8 +8,8 @@ import {
   Radio,
   TrendingUp,
   CheckCheck,
-  Loader2,
 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
 interface Notification {
@@ -61,44 +60,48 @@ const item = {
 };
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [markingAll, setMarkingAll] = useState(false);
+  const queryClient = useQueryClient();
 
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data, isLoading } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () => {
       const res = await fetch("/api/notifications?page=1&limit=50");
-      const data = await res.json();
-      setNotifications(data.notifications || []);
-      setUnreadCount(data.unreadCount || 0);
-    } catch {
-      setNotifications([]);
-      setUnreadCount(0);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      if (!res.ok) throw new Error("Failed to fetch notifications");
+      return res.json() as Promise<{ notifications: Notification[]; unreadCount: number }>;
+    },
+  });
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
-
-  const markAllRead = async () => {
-    setMarkingAll(true);
-    try {
-      await fetch("/api/notifications", {
+  const markAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/notifications", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ markAll: true }),
       });
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-      setUnreadCount(0);
-    } finally {
-      setMarkingAll(false);
-    }
-  };
+      if (!res.ok) throw new Error("Failed to mark all as read");
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const prev = queryClient.getQueryData<{ notifications: Notification[]; unreadCount: number }>(["notifications"]);
+      if (prev) {
+        queryClient.setQueryData(["notifications"], {
+          ...prev,
+          unreadCount: 0,
+          notifications: prev.notifications.map((n) => ({ ...n, isRead: true })),
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(["notifications"], context.prev);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const notifications = data?.notifications ?? [];
+  const unreadCount = data?.unreadCount ?? 0;
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -109,19 +112,28 @@ export default function NotificationsPage() {
         </div>
         {unreadCount > 0 && (
           <button
-            onClick={markAllRead}
-            disabled={markingAll}
+            onClick={() => markAllMutation.mutate()}
+            disabled={markAllMutation.isPending}
             className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-muted transition-all hover:bg-white/10 hover:text-foreground disabled:opacity-50"
           >
             <CheckCheck className="h-4 w-4" />
-            {markingAll ? "Marking..." : "Mark all as read"}
+            {markAllMutation.isPending ? "Marking..." : "Mark all as read"}
           </button>
         )}
       </motion.div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="glass-card animate-pulse flex items-start gap-4 rounded-2xl p-4">
+              <div className="h-10 w-10 shrink-0 rounded-xl bg-white/5" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-40 rounded bg-white/5" />
+                <div className="h-3 w-64 rounded bg-white/5" />
+                <div className="h-3 w-16 rounded bg-white/5" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : notifications.length === 0 ? (
         <motion.div variants={item} className="flex flex-col items-center justify-center py-20 text-center">

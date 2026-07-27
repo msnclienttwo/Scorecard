@@ -20,19 +20,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PlayerStats } from "@/components/player/PlayerStats";
 import { RecentForm } from "@/components/player/RecentForm";
-import { cn } from "@/lib/utils";
+import { DynamicBarChart, DynamicPieChart } from "@/components/ui/DynamicCharts";
 import Link from "next/link";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
 
 const container = {
   hidden: { opacity: 0 },
@@ -89,12 +78,7 @@ export default function PlayerProfilePage() {
   ];
 
   return (
-    <motion.div
-      variants={container}
-      initial="hidden"
-      animate="show"
-      className="space-y-6"
-    >
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
       <motion.div variants={item}>
         <Link
           href="/players"
@@ -113,11 +97,7 @@ export default function PlayerProfilePage() {
         <div className="relative flex flex-col md:flex-row items-start gap-6">
           <div className="w-28 h-28 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-4xl font-bold text-white flex-shrink-0">
             {player.image ? (
-              <img
-                src={player.image}
-                alt={player.name}
-                className="w-full h-full rounded-full object-cover"
-              />
+              <img src={player.image} alt={player.name} className="w-full h-full rounded-full object-cover" />
             ) : (
               player.name?.charAt(0)
             )}
@@ -125,37 +105,22 @@ export default function PlayerProfilePage() {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-bold text-white">{player.name}</h1>
-              {player.isCaptain && (
-                <Badge variant="accent">Captain</Badge>
-              )}
+              {player.isCaptain && <Badge variant="accent">Captain</Badge>}
             </div>
             <div className="flex flex-wrap items-center gap-4 text-white/60 text-sm">
               {player.team && (
-                <span className="flex items-center gap-1">
-                  <Trophy className="w-4 h-4" />
-                  {player.team.name}
-                </span>
+                <span className="flex items-center gap-1"><Trophy className="w-4 h-4" />{player.team.name}</span>
               )}
               {player.nationality && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-4 h-4" />
-                  {player.nationality}
-                </span>
+                <span className="flex items-center gap-1"><MapPin className="w-4 h-4" />{player.nationality}</span>
               )}
               {player.dateOfBirth && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-4 h-4" />
-                  {new Date(player.dateOfBirth).toLocaleDateString()}
-                </span>
+                <span className="flex items-center gap-1"><Calendar className="w-4 h-4" />{new Date(player.dateOfBirth).toLocaleDateString()}</span>
               )}
             </div>
             <div className="flex flex-wrap gap-2 mt-3">
-              {player.battingStyle && (
-                <Badge>{player.battingStyle}</Badge>
-              )}
-              {player.bowlingStyle && (
-                <Badge>{player.bowlingStyle}</Badge>
-              )}
+              {player.battingStyle && <Badge>{player.battingStyle}</Badge>}
+              {player.bowlingStyle && <Badge>{player.bowlingStyle}</Badge>}
               {player.role && <Badge variant="info">{player.role}</Badge>}
             </div>
           </div>
@@ -182,75 +147,22 @@ export default function PlayerProfilePage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div variants={item}>
           <Card className="p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              Runs Per Match
-            </h3>
+            <h3 className="text-lg font-semibold text-white mb-4">Runs Per Match</h3>
             {runsPerMatch.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={runsPerMatch}>
-                  <XAxis
-                    dataKey="match"
-                    stroke="#ffffff40"
-                    tick={{ fill: "#ffffff80", fontSize: 12 }}
-                  />
-                  <YAxis
-                    stroke="#ffffff40"
-                    tick={{ fill: "#ffffff80", fontSize: 12 }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#0d1320",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: "12px",
-                      color: "#fff",
-                    }}
-                  />
-                  <Bar dataKey="runs" fill="#2563EB" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <DynamicBarChart data={runsPerMatch} dataKey="runs" />
             ) : (
-              <div className="flex items-center justify-center h-[250px] text-white/30">
-                No batting data available
-              </div>
+              <div className="flex items-center justify-center h-[250px] text-white/30">No batting data available</div>
             )}
           </Card>
         </motion.div>
 
         <motion.div variants={item}>
           <Card className="p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              Boundary Distribution
-            </h3>
+            <h3 className="text-lg font-semibold text-white mb-4">Boundary Distribution</h3>
             {player.totalRuns > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={boundaryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {boundaryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "#0d1320",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: "12px",
-                      color: "#fff",
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <DynamicPieChart data={boundaryData} />
             ) : (
-              <div className="flex items-center justify-center h-[250px] text-white/30">
-                No data available
-              </div>
+              <div className="flex items-center justify-center h-[250px] text-white/30">No data available</div>
             )}
           </Card>
         </motion.div>
@@ -259,9 +171,7 @@ export default function PlayerProfilePage() {
       <motion.div variants={item}>
         <Card className="p-6">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Form</h3>
-          <RecentForm
-            matches={player.recentMatches || []}
-          />
+          <RecentForm matches={player.recentMatches || []} />
         </Card>
       </motion.div>
 

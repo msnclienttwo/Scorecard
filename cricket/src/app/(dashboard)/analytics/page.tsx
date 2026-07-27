@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
@@ -9,14 +8,8 @@ import {
   Target,
   BarChart3,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-
-interface StatCard {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  color: string;
-}
 
 const container = {
   hidden: { opacity: 0 },
@@ -29,44 +22,47 @@ const item = {
 };
 
 export default function AnalyticsPage() {
-  const [hasData, setHasData] = useState<boolean | null>(null);
-  const [stats, setStats] = useState<StatCard[]>([]);
-  const [loading, setLoading] = useState(true);
+  const matchesQuery = useQuery({
+    queryKey: ["analytics", "matches"],
+    queryFn: async () => {
+      const res = await fetch("/api/matches?status=COMPLETED&limit=1");
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [matchesRes, playersRes, teamsRes] = await Promise.all([
-          fetch("/api/matches?status=COMPLETED&limit=1"),
-          fetch("/api/players"),
-          fetch("/api/teams"),
-        ]);
+  const playersQuery = useQuery({
+    queryKey: ["analytics", "players"],
+    queryFn: async () => {
+      const res = await fetch("/api/players");
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
 
-        const matchesData = matchesRes.ok ? await matchesRes.json() : null;
-        const playersData = playersRes.ok ? await playersRes.json() : null;
-        const teamsData = teamsRes.ok ? await teamsRes.json() : null;
+  const teamsQuery = useQuery({
+    queryKey: ["analytics", "teams"],
+    queryFn: async () => {
+      const res = await fetch("/api/teams");
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
 
-        const matchCount = matchesData?.total ?? matchesData?.matches?.length ?? 0;
-        const playerCount = playersData?.total ?? playersData?.players?.length ?? 0;
-        const teamCount = teamsData?.total ?? teamsData?.teams?.length ?? 0;
+  const loading = matchesQuery.isLoading || playersQuery.isLoading || teamsQuery.isLoading;
 
-        setHasData(matchCount > 0);
+  const matchCount = matchesQuery.data?.pagination?.total ?? matchesQuery.data?.matches?.length ?? 0;
+  const playerCount = playersQuery.data?.pagination?.total ?? playersQuery.data?.players?.length ?? 0;
+  const teamCount = teamsQuery.data?.pagination?.total ?? teamsQuery.data?.teams?.length ?? 0;
+  const hasData = matchCount > 0;
 
-        if (matchCount > 0) {
-          setStats([
-            { label: "Matches Played", value: matchCount.toLocaleString(), icon: Trophy, color: "from-success to-accent" },
-            { label: "Active Players", value: playerCount.toLocaleString(), icon: Users, color: "from-warning to-danger" },
-            { label: "Teams", value: teamCount.toLocaleString(), icon: Target, color: "from-primary to-primary-light" },
-          ]);
-        }
-      } catch {
-        setHasData(false);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+  const stats = hasData
+    ? [
+        { label: "Matches Played", value: matchCount.toLocaleString(), icon: Trophy, color: "from-success to-accent" },
+        { label: "Active Players", value: playerCount.toLocaleString(), icon: Users, color: "from-warning to-danger" },
+        { label: "Teams", value: teamCount.toLocaleString(), icon: Target, color: "from-primary to-primary-light" },
+      ]
+    : [];
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
