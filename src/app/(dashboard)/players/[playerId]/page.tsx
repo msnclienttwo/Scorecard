@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -97,7 +98,7 @@ export default function PlayerProfilePage() {
         <div className="relative flex flex-col md:flex-row items-start gap-6">
           <div className="w-28 h-28 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-4xl font-bold text-white flex-shrink-0">
             {player.image ? (
-              <img src={player.image} alt={player.name} className="w-full h-full rounded-full object-cover" />
+              <Image src={player.image} alt={player.name} width={112} height={112} className="w-full h-full rounded-full object-cover" />
             ) : (
               player.name?.charAt(0)
             )}

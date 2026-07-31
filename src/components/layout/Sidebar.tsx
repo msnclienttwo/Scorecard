@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn, generateInitials } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useNotifications } from "@/hooks/useNotifications";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -31,7 +32,7 @@ const navItems = [
   { icon: Calendar, label: "Tournaments", href: "/tournaments" },
   { icon: BarChart3, label: "Analytics", href: "/analytics" },
   { icon: Search, label: "Search", href: "/search" },
-  { icon: Bell, label: "Notifications", href: "/notifications", badge: 5 },
+  { icon: Bell, label: "Notifications", href: "/notifications" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
@@ -39,6 +40,7 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const { user } = useAuthStore();
+  const { unreadCount } = useNotifications();
 
   return (
     <motion.aside
@@ -81,6 +83,8 @@ export default function Sidebar() {
           <div className="flex flex-col gap-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+              const itemBadge = item.href === "/notifications" ? unreadCount : 0;
+              const showBadge = itemBadge > 0;
               return (
                 <Link key={item.href} href={item.href}>
                   <motion.div
@@ -117,12 +121,12 @@ export default function Sidebar() {
                         </motion.span>
                       )}
                     </AnimatePresence>
-                    {!collapsed && item.badge && (
+                    {!collapsed && showBadge && (
                       <span className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white">
-                        {item.badge}
+                        {itemBadge > 99 ? "99+" : itemBadge}
                       </span>
                     )}
-                    {collapsed && item.badge && (
+                    {collapsed && showBadge && (
                       <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" />
                     )}
                   </motion.div>

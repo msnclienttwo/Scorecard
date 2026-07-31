@@ -1,40 +1,77 @@
 import { api } from './api';
-import type { Notification, PaginatedResponse } from '@/types';
+import type { Notification } from '@/types';
+
+export interface NotificationItem {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  matchId: string | null;
+  data: Record<string, unknown> | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  notifications: NotificationItem[];
+  unreadCount: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
 
 interface NotificationFilters {
-  read?: boolean;
   page?: string;
   limit?: string;
+  unread?: string;
 }
 
 export class NotificationService {
   static async getNotifications(
     params?: NotificationFilters
-  ): Promise<PaginatedResponse<Notification>> {
-    const response = await api.get<Notification[]>(
+  ): Promise<NotificationsResponse> {
+    return (await api.get<NotificationsResponse>(
       '/api/notifications',
       params as Record<string, string>
+    )) as unknown as NotificationsResponse;
+  }
+
+  static async createNotification(data: {
+    userId?: string;
+    type?: string;
+    title: string;
+    message: string;
+    matchId?: string;
+    data?: unknown;
+  }): Promise<Notification> {
+    const response = await api.post<Notification>('/api/notifications', data);
+    return response.data!;
+  }
+
+  static async markAsRead(id: string): Promise<{ unreadCount: number }> {
+    const response = await api.patch<{ unreadCount: number }>(
+      `/api/notifications/${id}`,
+      { isRead: true }
     );
-    return response as unknown as PaginatedResponse<Notification>;
-  }
-
-  static async markAsRead(id: string): Promise<Notification> {
-    const response = await api.patch<Notification>(`/api/notifications/${id}`, {
-      read: true,
-    });
     return response.data!;
   }
 
-  static async markAllRead(): Promise<void> {
-    await api.patch('/api/notifications/read-all');
-  }
-
-  static async getUnreadCount(): Promise<{ count: number }> {
-    const response = await api.get<{ count: number }>('/api/notifications/unread-count');
+  static async markAllRead(): Promise<{ unreadCount: number }> {
+    const response = await api.put<{ unreadCount: number }>(
+      '/api/notifications',
+      { markAllAsRead: true }
+    );
     return response.data!;
   }
 
-  static async deleteNotification(id: string): Promise<void> {
-    await api.delete(`/api/notifications/${id}`);
+  static async deleteNotification(id: string): Promise<{ unreadCount: number }> {
+    const response = await api.delete<{ unreadCount: number }>(
+      `/api/notifications/${id}`
+    );
+    return response.data!;
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { notifyMatchCreated } from '@/lib/notifications'
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,6 +78,10 @@ export async function POST(request: NextRequest) {
       tossWinner,
       tossDecision,
       umpires,
+      scorerIds,
+      playerIds,
+      captainA,
+      captainB,
     } = body
 
     if (!homeTeamId || !awayTeamId) {
@@ -157,7 +162,69 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ match }, { status: 201 })
+    const scorerIdsArray: string[] = Array.isArray(scorerIds)
+      ? [
+          ...new Set(
+            (scorerIds as unknown[]).filter(
+              (id): id is string => typeof id === 'string' && id.length > 0
+            )
+          ),
+        ]
+      : []
+    if (scorerIdsArray.length > 0) {
+      const validScorers = await prisma.user.findMany({
+        where: { id: { in: scorerIdsArray } },
+        select: { id: true }
+      })
+      const validScorerIds = validScorers.map((u) => u.id)
+      await prisma.matchScorer.createMany({
+        data: validScorerIds.map((userId) => ({ matchId: match.id, userId }))
+      })
+    }
+
+    const squadPlayers: { playerId: string; teamId: string; isCaptain: boolean }[] = []
+    if (playerIds && typeof playerIds === 'object') {
+      const teamAIds = Array.isArray(playerIds.teamA) ? playerIds.teamA : []
+      const teamBIds = Array.isArray(playerIds.teamB) ? playerIds.teamB : []
+      for (const playerId of teamAIds) {
+        squadPlayers.push({ playerId, teamId: homeTeamId, isCaptain: playerId === captainA })
+      }
+      for (const playerId of teamBIds) {
+        squadPlayers.push({ playerId, teamId: awayTeamId, isCaptain: playerId === captainB })
+      }
+    }
+    if (squadPlayers.length > 0) {
+      await prisma.matchPlayer.createMany({
+        data: squadPlayers.map((entry) => ({
+          matchId: match.id,
+          playerId: entry.playerId,
+          teamId: entry.teamId,
+          isCaptain: entry.isCaptain,
+        }))
+      })
+    }
+
+    try {
+      await notifyMatchCreated({
+        matchId: match.id,
+        matchName: match.name,
+        creatorId: user.sub,
+        scorerIds: scorerIdsArray,
+      })
+    } catch (error) {
+      console.error('Error creating match notification:', error)
+    }
+
+    return NextResponse.json(
+      {
+        match: {
+          ...match,
+          matchScorers: scorerIdsArray.map((userId) => ({ userId })),
+          squads: squadPlayers.map((entry) => ({ ...entry })),
+        },
+      },
+      { status: 201 }
+    )
   } catch (error) {
     console.error('Error creating match:', error)
     const message =

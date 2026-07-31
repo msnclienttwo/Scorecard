@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import {
   PlusCircle,
@@ -198,7 +199,7 @@ export default function PlayersPage() {
                 <div className="flex items-start gap-4">
                   <Link href={`/players/${player.id}`} className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-bold text-white flex-shrink-0 hover:opacity-80 transition-opacity">
                     {player.image ? (
-                      <img src={player.image} alt={player.name} className="w-full h-full rounded-full object-cover" />
+                      <Image src={player.image} alt={player.name} width={48} height={48} className="w-full h-full rounded-full object-cover" />
                     ) : (
                       generateInitials(player.name)
                     )}

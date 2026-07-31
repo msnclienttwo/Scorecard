@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { notifyPlayerCreated } from '@/lib/notifications'
 
 export async function GET(request: NextRequest) {
   try {
@@ -95,6 +96,17 @@ export async function POST(request: NextRequest) {
         team: { select: { id: true, name: true } }
       }
     })
+
+    try {
+      await notifyPlayerCreated(
+        user.sub,
+        player.name,
+        player.id,
+        player.team?.name ?? undefined
+      )
+    } catch (error) {
+      console.error('Error creating player notification:', error)
+    }
 
     return NextResponse.json({ player }, { status: 201 })
   } catch (error) {

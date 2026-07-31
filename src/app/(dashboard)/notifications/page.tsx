@@ -8,21 +8,24 @@ import {
   Radio,
   TrendingUp,
   CheckCheck,
+  Trash2,
+  Swords,
+  UserPlus,
+  Calendar,
+  CircleCheck,
+  BellRing,
 } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  isRead: boolean;
-  createdAt: string;
-}
+import { useNotifications } from "@/hooks/useNotifications";
+import type { NotificationItem } from "@/services/notification.service";
 
 const iconMap: Record<string, typeof Trophy> = {
+  SYSTEM: BellRing,
+  MATCH_CREATED: Calendar,
   MATCH_STARTED: Radio,
+  MATCH_COMPLETED: CircleCheck,
+  TEAM_CREATED: Swords,
+  PLAYER_CREATED: UserPlus,
   BOUNDARY: Zap,
   SIX: Zap,
   WICKET: Trophy,
@@ -60,48 +63,21 @@ const item = {
 };
 
 export default function NotificationsPage() {
-  const queryClient = useQueryClient();
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
+    isMarkingAll,
+  } = useNotifications();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["notifications"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications?page=1&limit=50");
-      if (!res.ok) throw new Error("Failed to fetch notifications");
-      return res.json() as Promise<{ notifications: Notification[]; unreadCount: number }>;
-    },
-  });
-
-  const markAllMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/notifications", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markAll: true }),
-      });
-      if (!res.ok) throw new Error("Failed to mark all as read");
-    },
-    onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ["notifications"] });
-      const prev = queryClient.getQueryData<{ notifications: Notification[]; unreadCount: number }>(["notifications"]);
-      if (prev) {
-        queryClient.setQueryData(["notifications"], {
-          ...prev,
-          unreadCount: 0,
-          notifications: prev.notifications.map((n) => ({ ...n, isRead: true })),
-        });
-      }
-      return { prev };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.prev) queryClient.setQueryData(["notifications"], context.prev);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-  });
-
-  const notifications = data?.notifications ?? [];
-  const unreadCount = data?.unreadCount ?? 0;
+  const handleNotificationClick = (notif: NotificationItem) => {
+    if (!notif.isRead) {
+      markAsRead(notif.id);
+    }
+  };
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -112,12 +88,12 @@ export default function NotificationsPage() {
         </div>
         {unreadCount > 0 && (
           <button
-            onClick={() => markAllMutation.mutate()}
-            disabled={markAllMutation.isPending}
+            onClick={() => markAllAsRead()}
+            disabled={isMarkingAll}
             className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-muted transition-all hover:bg-white/10 hover:text-foreground disabled:opacity-50"
           >
             <CheckCheck className="h-4 w-4" />
-            {markAllMutation.isPending ? "Marking..." : "Mark all as read"}
+            {isMarkingAll ? "Marking..." : "Mark all as read"}
           </button>
         )}
       </motion.div>
@@ -146,12 +122,21 @@ export default function NotificationsPage() {
       ) : (
         <motion.div variants={container} initial="hidden" animate="show" className="space-y-2">
           {notifications.map((notif) => {
-            const Icon = iconMap[notif.type] || Bell;
+            const Icon = iconMap[notif.type] || BellRing;
             return (
               <motion.div key={notif.id} variants={item}>
                 <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleNotificationClick(notif)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleNotificationClick(notif);
+                    }
+                  }}
                   className={cn(
-                    "glass-card flex items-start gap-4 rounded-2xl p-4 transition-all",
+                    "glass-card flex items-start gap-4 rounded-2xl p-4 transition-all cursor-pointer hover:bg-white/[0.07]",
                     !notif.isRead && "border-l-2 border-l-primary"
                   )}
                 >
@@ -171,6 +156,16 @@ export default function NotificationsPage() {
                     <p className="mt-0.5 text-sm text-muted">{notif.message}</p>
                     <p className="mt-1 text-xs text-muted/60">{timeAgo(notif.createdAt)}</p>
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteNotification(notif.id);
+                    }}
+                    className="shrink-0 rounded-lg p-2 text-muted/40 transition-colors hover:bg-white/5 hover:text-danger"
+                    aria-label="Delete notification"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </motion.div>
             );

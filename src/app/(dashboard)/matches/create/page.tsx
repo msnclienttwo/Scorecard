@@ -21,6 +21,7 @@ import {
   X,
   Shield,
   MinusCircle,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreateTeamModal } from "@/components/teams/CreateTeamModal";
@@ -56,8 +57,17 @@ interface MatchFormData {
   tossWinner: string;
   tossDecision: "bat" | "bowl";
   umpires: string[];
+  scorers: string[];
   description: string;
   tournamentId: string;
+}
+
+interface ScorerUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  image?: string | null;
+  role?: string | null;
 }
 
 const STEPS = [
@@ -93,6 +103,10 @@ export default function CreateMatchPage() {
   const [createPlayerOpen, setCreatePlayerOpen] = useState(false);
   const [createPlayerTarget, setCreatePlayerTarget] = useState<"A" | "B">("A");
 
+  const [users, setUsers] = useState<ScorerUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [scorerQuery, setScorerQuery] = useState("");
+
   const [formData, setFormData] = useState<MatchFormData>({
     matchName: "",
     format: "T20",
@@ -109,6 +123,7 @@ export default function CreateMatchPage() {
     tossWinner: "",
     tossDecision: "bat",
     umpires: [],
+    scorers: [],
     description: "",
     tournamentId: "",
   });
@@ -136,13 +151,53 @@ export default function CreateMatchPage() {
     try {
       const res = await fetch("/api/teams?limit=100");
       if (res.ok) {
-        const data = await res.json();
-        setTeams(data.teams ?? data ?? []);
+        const teams = await res.json();
+        setTeams(teams.teams ?? teams ?? []);
       }
     } catch {
       console.error("Failed to refresh teams");
     }
   }, []);
+
+  const fetchScorerUsers = useCallback(async (query: string = "") => {
+    try {
+      setUsersLoading(true);
+      const res = await fetch(
+        `/api/users/search${query ? `?q=${encodeURIComponent(query)}` : ""}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users ?? []);
+      }
+    } catch {
+      console.error("Failed to fetch scorers");
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchScorerUsers();
+  }, [fetchScorerUsers]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchScorerUsers(scorerQuery.trim());
+    }, 300);
+    return () => clearTimeout(t);
+  }, [scorerQuery, fetchScorerUsers]);
+
+  const toggleScorer = (userId: string) => {
+    updateForm(
+      "scorers",
+      formData.scorers.includes(userId)
+        ? formData.scorers.filter((id) => id !== userId)
+        : [...formData.scorers, userId]
+    );
+  };
+
+  const scorerName = (id: string) =>
+    users.find((u) => u.id === id)?.name ?? "Unknown";
 
   const fetchPlayers = useCallback(async (teamId: string, side: "A" | "B") => {
     const setter = side === "A" ? setPlayersA : setPlayersB;
@@ -281,6 +336,9 @@ export default function CreateMatchPage() {
           teamA: formData.playersA,
           teamB: formData.playersB,
         },
+        captainA: formData.captainA || undefined,
+        captainB: formData.captainB || undefined,
+        scorerIds: formData.scorers,
         umpires: formData.umpires,
       };
 
@@ -902,6 +960,57 @@ export default function CreateMatchPage() {
                       </motion.button>
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm text-muted mb-2">
+                      Scorers
+                    </label>
+                    <p className="text-xs text-muted/70 mb-3">
+                      Assign scorers for this match. Leave empty to make the
+                      creator the only scorer.
+                    </p>
+                    <div className="relative mb-3">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                      <input
+                        type="text"
+                        value={scorerQuery}
+                        onChange={(e) => setScorerQuery(e.target.value)}
+                        placeholder="Search users by name or email..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-primary transition-colors"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {usersLoading ? (
+                        <span className="text-xs text-muted flex items-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Loading users...
+                        </span>
+                      ) : users.length === 0 ? (
+                        <span className="text-xs text-muted">
+                          No users found.
+                        </span>
+                      ) : (
+                        users.map((u) => {
+                          const selected = formData.scorers.includes(u.id);
+                          return (
+                            <motion.button
+                              key={u.id}
+                              whileTap={{ scale: 0.97 }}
+                              onClick={() => toggleScorer(u.id)}
+                              className={cn(
+                                "flex items-center gap-2 px-3 py-2 rounded-xl border text-sm transition-all",
+                                selected
+                                  ? "bg-accent/15 border-accent text-white"
+                                  : "bg-white/5 border-white/10 text-muted hover:text-white"
+                              )}
+                            >
+                              {selected && <Check className="w-3.5 h-3.5 text-accent" />}
+                              {u.name || u.email}
+                            </motion.button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 </motion.div>
               )}
 
@@ -957,6 +1066,13 @@ export default function CreateMatchPage() {
                           formData.umpires.filter(Boolean).length > 0
                             ? formData.umpires.filter(Boolean).join(", ")
                             : "Not set",
+                      },
+                      {
+                        label: "Scorers",
+                        value:
+                          formData.scorers.length > 0
+                            ? formData.scorers.map(scorerName).join(", ")
+                            : "Creator only",
                       },
                     ].map((item) => (
                       <div

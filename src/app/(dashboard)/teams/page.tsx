@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import {
   PlusCircle,
@@ -146,7 +147,7 @@ export default function TeamsPage() {
                       }}
                     >
                       {team.logo ? (
-                        <img src={team.logo} alt={team.name} className="w-full h-full rounded-xl object-cover" />
+                        <Image src={team.logo} alt={team.name} width={56} height={56} className="w-full h-full rounded-xl object-cover" />
                       ) : (
                         team.shortName || generateInitials(team.name)
                       )}

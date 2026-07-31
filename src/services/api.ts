@@ -10,18 +10,9 @@ class ApiClient {
   }
 
   private getHeaders(): HeadersInit {
-    const headers: HeadersInit = {
+    return {
       'Content-Type': 'application/json',
     };
-
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('scorebolt-token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-    }
-
-    return headers;
   }
 
   private async request<T>(
@@ -37,7 +28,7 @@ class ApiClient {
       },
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (response.status === 401) {
       if (typeof window !== 'undefined') {

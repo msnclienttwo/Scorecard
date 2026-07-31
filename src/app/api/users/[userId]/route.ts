@@ -57,7 +57,8 @@ export async function PUT(
 
     const { userId } = await params
 
-    if (userId !== user.sub && user.role !== 'ADMIN') {
+    const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'TOURNAMENT_ADMIN'
+    if (userId !== user.sub && !isAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -76,7 +77,7 @@ export async function PUT(
         image: body.image,
         bio: body.bio,
         phone: body.phone,
-        ...(user.role === 'ADMIN' ? { role: body.role } : {})
+        ...(isAdmin ? { role: body.role } : {})
       },
       select: {
         id: true,
@@ -104,7 +105,7 @@ export async function DELETE(
 ) {
   try {
     const user = await getCurrentUser()
-    if (!user || user.role !== 'ADMIN') {
+    if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'TOURNAMENT_ADMIN')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

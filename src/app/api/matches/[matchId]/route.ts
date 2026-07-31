@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { getScoringAccess } from '@/lib/scoring'
+import { notifyMatchStarted, notifyMatchCompleted } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -15,17 +17,46 @@ export async function GET(
         homeTeam: { select: { id: true, name: true, shortName: true, logo: true } },
         awayTeam: { select: { id: true, name: true, shortName: true, logo: true } },
         tournament: { select: { id: true, name: true } },
+        matchScorers: {
+          include: { user: { select: { id: true, name: true, email: true } } }
+        },
+        squads: {
+          include: {
+            player: { select: { id: true, name: true, shortName: true, role: true } },
+            team: { select: { id: true, name: true, shortName: true } }
+          }
+        },
         innings: {
           include: {
-            battingCard: { include: { player: { select: { id: true, name: true } } } },
-            bowlingCard: { include: { player: { select: { id: true, name: true } } } },
-            overs: true
+            battingCard: {
+              include: { player: { select: { id: true, name: true } } },
+              orderBy: { batPosition: 'asc' }
+            },
+            bowlingCard: {
+              include: { player: { select: { id: true, name: true } } },
+              orderBy: { overs: 'desc' }
+            },
+            fallOfWickets: { orderBy: { wicketNumber: 'asc' } },
+            overs: {
+              orderBy: { overNumber: 'asc' },
+              include: {
+                balls: {
+                  orderBy: { ballNumber: 'asc' },
+                  include: {
+                    over: true,
+                  }
+                }
+              }
+            },
           },
           orderBy: { inningsNumber: 'asc' }
         },
         events: {
           orderBy: { timestamp: 'desc' },
           take: 50
+        },
+        commentary: {
+          orderBy: { createdAt: 'asc' }
         },
         creator: { select: { id: true, name: true } }
       }
@@ -38,7 +69,10 @@ export async function GET(
       )
     }
 
-    return NextResponse.json({ match })
+    const user = await getCurrentUser()
+    const scoringAccess = getScoringAccess(match, user)
+
+    return NextResponse.json({ match: { ...match, scoringAccess } })
   } catch (error) {
     console.error('Error fetching match:', error)
     return NextResponse.json(
@@ -62,7 +96,8 @@ export async function PUT(
     const body = await request.json()
 
     const existingMatch = await prisma.match.findUnique({
-      where: { id: matchId }
+      where: { id: matchId },
+      include: { matchScorers: true },
     })
 
     if (!existingMatch) {
@@ -91,6 +126,29 @@ export async function PUT(
         awayTeam: { select: { id: true, name: true } }
       }
     })
+
+    const notificationContext = {
+      matchId: existingMatch.id,
+      matchName: existingMatch.name,
+      creatorId: existingMatch.createdBy,
+      scorerIds: existingMatch.matchScorers.map((s) => s.userId),
+    }
+
+    if (body.status === 'LIVE' && existingMatch.status !== 'LIVE') {
+      try {
+        await notifyMatchStarted(notificationContext)
+      } catch (error) {
+        console.error('Error creating match-started notification:', error)
+      }
+    }
+
+    if (body.status === 'COMPLETED' && existingMatch.status !== 'COMPLETED') {
+      try {
+        await notifyMatchCompleted(notificationContext, body.result ?? null)
+      } catch (error) {
+        console.error('Error creating match-completed notification:', error)
+      }
+    }
 
     return NextResponse.json({ match })
   } catch (error) {

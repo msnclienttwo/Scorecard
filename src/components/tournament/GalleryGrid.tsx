@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ZoomIn } from "lucide-react";
 
@@ -38,10 +39,12 @@ export default function GalleryGrid({ items }: GalleryGridProps) {
             className="relative aspect-square rounded-xl overflow-hidden cursor-pointer group"
             onClick={() => setSelected(item)}
           >
-            <img
+            <Image
               src={item.url}
               alt={item.caption || "Gallery image"}
-              className="w-full h-full object-cover"
+              fill
+              sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <ZoomIn className="w-8 h-8 text-white" />
@@ -71,10 +74,12 @@ export default function GalleryGrid({ items }: GalleryGridProps) {
               className="relative max-w-4xl max-h-[80vh]"
               onClick={(e) => e.stopPropagation()}
             >
-              <img
+              <Image
                 src={selected.url}
                 alt={selected.caption || "Gallery image"}
-                className="max-w-full max-h-[80vh] rounded-xl object-contain"
+                width={1200}
+                height={675}
+                className="max-w-full max-h-[80vh] w-auto h-auto rounded-xl object-contain"
               />
               <button
                 onClick={() => setSelected(null)}

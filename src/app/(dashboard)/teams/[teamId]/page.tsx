@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -97,9 +98,11 @@ export default function TeamPage() {
             }}
           >
             {team.logo ? (
-              <img
+              <Image
                 src={team.logo}
                 alt={team.name}
+                width={96}
+                height={96}
                 className="w-full h-full rounded-2xl object-cover"
               />
             ) : (
@@ -158,9 +161,11 @@ export default function TeamPage() {
               >
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                   {player.image ? (
-                    <img
+                    <Image
                       src={player.image}
                       alt={player.name}
+                      width={40}
+                      height={40}
                       className="w-full h-full rounded-full object-cover"
                     />
                   ) : (

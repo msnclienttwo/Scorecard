@@ -10,6 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://scorebolt.app"),
   title: {
     default: "ScoreBolt - Live Cricket Scoring, Reimagined",
     template: "%s | ScoreBolt",

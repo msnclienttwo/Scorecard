@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 interface AvatarProps {
@@ -43,9 +44,11 @@ function Avatar({ src, alt = '', name = '', size = 'md', online, className }: Av
           {getInitials(name)}
         </div>
       ) : (
-        <img
+        <Image
           src={src}
           alt={alt}
+          width={px}
+          height={px}
           className="w-full h-full rounded-full object-cover"
           onError={() => setImgError(true)}
         />

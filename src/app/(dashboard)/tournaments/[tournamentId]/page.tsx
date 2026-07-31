@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -112,9 +113,11 @@ export default function TournamentPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
         <div className="relative flex flex-col md:flex-row items-start gap-6">
           {tournament.logo ? (
-            <img
+            <Image
               src={tournament.logo}
               alt={tournament.name}
+              width={80}
+              height={80}
               className="w-20 h-20 rounded-2xl object-cover"
             />
           ) : (

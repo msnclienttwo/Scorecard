@@ -16,8 +16,11 @@ enum UserRole {
 
 enum MatchStatus {
   SCHEDULED
+  READY
   LIVE
+  INNINGS_BREAK
   COMPLETED
+  ARCHIVED
   ABANDONED
   DELAYED
 }
@@ -44,6 +47,7 @@ enum WicketType {
   HIT_WICKET
   RETIRED_HURT
   TIMED_OUT
+  OBSTRUCTING_FIELD
 }
 
 enum MatchFormat {
@@ -55,7 +59,12 @@ enum MatchFormat {
 }
 
 enum NotificationType {
+  SYSTEM
+  MATCH_CREATED
   MATCH_STARTED
+  MATCH_COMPLETED
+  TEAM_CREATED
+  PLAYER_CREATED
   BOUNDARY
   SIX
   WICKET
@@ -96,7 +105,7 @@ model User {
   teams         Team[]           @relation("TeamOwner")
   players       Player[]         @relation("PlayerUser")
   createdMatches Match[]         @relation("MatchCreator")
-  scorerMatches  Match[]         @relation("MatchScorer")
+  scorerAssignments MatchScorer[]
   tournaments   Tournament[]     @relation("TournamentOwner")
   notifications Notification[]
   comments      Commentary[]
@@ -172,6 +181,7 @@ model Team {
   awayMatches   Match[]    @relation("AwayTeam")
   tournaments   TournamentTeam[]
   standings     TournamentStanding[]
+  squadMatches  MatchPlayer[]
 
   @@index([name])
   @@index([shortName])
@@ -200,6 +210,7 @@ model Player {
   battingStats  BattingScorecard[]
   bowlingStats  BowlingScorecard[]
   manOfTheMatch ManOfTheMatch[]
+  matchSquads   MatchPlayer[]
 
   @@index([name])
   @@index([teamId])
@@ -311,20 +322,21 @@ model Match {
   thirdUmpire   String?
   reserveUmpire String?
   createdBy     String
-  scorerId      String?
+  isPaused      Boolean     @default(false)
   tournamentId  String?
   homeTeamId    String
   awayTeamId    String
-  isPublic      Boolean      @default(true)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  isPublic      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  creator       User         @relation("MatchCreator", fields: [createdBy], references: [id])
-  scorer        User?        @relation("MatchScorer", fields: [scorerId], references: [id])
-  tournament    Tournament?  @relation(fields: [tournamentId], references: [id])
-  ground        Ground?      @relation(fields: [groundId], references: [id])
-  homeTeam      Team         @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam      Team         @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  creator       User            @relation("MatchCreator", fields: [createdBy], references: [id])
+  tournament    Tournament?     @relation(fields: [tournamentId], references: [id])
+  ground        Ground?         @relation(fields: [groundId], references: [id])
+  homeTeam      Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam      Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  matchScorers  MatchScorer[]
+  squads        MatchPlayer[]
   innings       Innings[]
   events        MatchEvent[]
   commentary    Commentary[]
@@ -334,6 +346,38 @@ model Match {
   @@index([status])
   @@index([scheduledAt])
   @@index([tournamentId])
+}
+
+model MatchScorer {
+  id        String   @id @default(cuid())
+  matchId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, userId])
+  @@index([matchId])
+  @@index([userId])
+}
+
+model MatchPlayer {
+  id           String   @id @default(cuid())
+  matchId      String
+  playerId     String
+  teamId       String
+  isCaptain    Boolean  @default(false)
+  battingOrder Int?
+  createdAt    DateTime @default(now())
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id])
+
+  @@unique([matchId, playerId])
+  @@index([matchId])
+  @@index([teamId])
 }
 
 model PlayerOfMatch {
@@ -356,19 +400,24 @@ model ManOfTheMatch {
 }
 
 model Innings {
-  id            String   @id @default(cuid())
-  matchId       String
-  inningsNumber Int
-  battingTeam   String
-  bowlingTeam   String
-  totalRuns     Int      @default(0)
-  totalWickets  Int      @default(0)
-  totalOvers    Float    @default(0)
-  extras        Int      @default(0)
-  declared      Boolean  @default(false)
-  targetScore   Int?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                String   @id @default(cuid())
+  matchId           String
+  inningsNumber     Int
+  battingTeam       String
+  bowlingTeam       String
+  totalRuns         Int      @default(0)
+  totalWickets      Int      @default(0)
+  totalOvers        Float    @default(0)
+  extras            Int      @default(0)
+  declared          Boolean  @default(false)
+  targetScore       Int?
+  strikerId         String?
+  nonStrikerId      String?
+  currentBowlerId   String?
+  battingOrderCount Int      @default(0)
+  endedAt           DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   overs         Over[]
@@ -413,16 +462,22 @@ model Ball {
   extraRuns    Int       @default(0)
   isWicket     Boolean   @default(false)
   wicketType   WicketType?
+  dismissedPlayerId String?
   fielderId    String?
   description  String?
   ballResult   BallResult
+  recordedById String?
+  updatedById  String?
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime? @updatedAt
 
   innings      Innings   @relation(fields: [inningsId], references: [id], onDelete: Cascade)
   over         Over      @relation(fields: [overId], references: [id], onDelete: Cascade)
 
   @@index([inningsId])
   @@index([overId])
+  @@index([bowlerId])
+  @@index([batsmanId])
 }
 
 model BattingScorecard {

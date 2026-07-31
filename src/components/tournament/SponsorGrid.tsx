@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 interface Sponsor {
   id?: string;
@@ -58,10 +59,12 @@ export default function SponsorGrid({ sponsors }: SponsorGridProps) {
                 transition={{ delay: i * 0.05 }}
                 className="p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.08] transition-colors"
               >
-                <img
+                <Image
                   src={sponsor.logo}
                   alt={sponsor.name}
-                  className="h-8 md:h-12 object-contain opacity-70 hover:opacity-100 transition-opacity"
+                  width={200}
+                  height={80}
+                  className="h-8 md:h-12 w-auto object-contain opacity-70 hover:opacity-100 transition-opacity"
                 />
               </motion.a>
             ))}

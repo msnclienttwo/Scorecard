@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { notifyMatchStarted } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -62,6 +63,7 @@ export async function POST(
 
     const match = await prisma.match.findUnique({
       where: { id: matchId },
+      include: { matchScorers: true },
     })
 
     if (!match) {
@@ -90,6 +92,17 @@ export async function POST(
         where: { id: matchId },
         data: { status: 'LIVE', startedAt: new Date() }
       })
+
+      try {
+        await notifyMatchStarted({
+          matchId: match.id,
+          matchName: match.name,
+          creatorId: match.createdBy,
+          scorerIds: match.matchScorers.map((s) => s.userId),
+        })
+      } catch (error) {
+        console.error('Error creating match-started notification:', error)
+      }
     }
 
     return NextResponse.json({ innings }, { status: 201 })
