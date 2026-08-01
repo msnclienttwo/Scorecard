@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { getScoringAccess } from '@/lib/scoring'
 import { notifyMatchCreated } from '@/lib/notifications'
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
@@ -28,9 +30,21 @@ export async function GET(request: NextRequest) {
       prisma.match.findMany({
         where,
         include: {
-          homeTeam: { select: { id: true, name: true, logo: true } },
-          awayTeam: { select: { id: true, name: true, logo: true } },
-          tournament: { select: { id: true, name: true } }
+          homeTeam: { select: { id: true, name: true, shortName: true, logo: true } },
+          awayTeam: { select: { id: true, name: true, shortName: true, logo: true } },
+          tournament: { select: { id: true, name: true } },
+          matchScorers: { select: { userId: true } },
+          innings: {
+            select: {
+              id: true,
+              inningsNumber: true,
+              battingTeam: true,
+              totalRuns: true,
+              totalWickets: true,
+              totalOvers: true,
+            },
+            orderBy: { inningsNumber: 'asc' },
+          },
         },
         orderBy: { scheduledAt: 'desc' },
         skip,
@@ -39,8 +53,13 @@ export async function GET(request: NextRequest) {
       prisma.match.count({ where })
     ])
 
+    const enriched = matches.map((match) => ({
+      ...match,
+      scoringAccess: getScoringAccess(match, user),
+    }))
+
     return NextResponse.json({
-      matches,
+      matches: enriched,
       pagination: {
         page,
         limit,

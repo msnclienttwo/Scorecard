@@ -6,6 +6,8 @@ import { Plus } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { LogoUploadButton } from "@/components/teams/LogoUploadButton";
+import { getLogoValidationError } from "@/lib/logo";
 import { useToast } from "@/hooks/useToast";
 
 interface CreateTeamModalProps {
@@ -95,8 +97,9 @@ export function CreateTeamModal({ isOpen, onClose, onTeamCreated }: CreateTeamMo
       newErrors.shortName = "Short name must be under 10 characters";
     }
 
-    if (form.logo && !/^https?:\/\/.+/i.test(form.logo)) {
-      newErrors.logo = "Please enter a valid URL";
+    if (form.logo) {
+      const logoError = getLogoValidationError(form.logo);
+      if (logoError) newErrors.logo = logoError;
     }
 
     setErrors(newErrors);
@@ -147,13 +150,21 @@ export function CreateTeamModal({ isOpen, onClose, onTeamCreated }: CreateTeamMo
           />
         </div>
 
-        <Input
-          label="Team Logo URL"
-          placeholder="https://example.com/logo.png"
-          value={form.logo}
-          onChange={(e) => updateField("logo", e.target.value)}
-          error={errors.logo}
-        />
+        <div className="space-y-2">
+          <Input
+            label="Team Logo URL"
+            placeholder="https://example.com/logo.png"
+            value={form.logo}
+            onChange={(e) => updateField("logo", e.target.value)}
+            error={errors.logo}
+          />
+          <LogoUploadButton
+            onUploaded={(url) => updateField("logo", url)}
+            onError={(message) =>
+              setErrors((prev) => ({ ...prev, logo: message }))
+            }
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <Input

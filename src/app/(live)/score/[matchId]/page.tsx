@@ -12,6 +12,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn, formatOvers, calculateRunRate } from "@/lib/utils";
+import { useSocketStore } from "@/store/useSocketStore";
 import type { Match, Innings, Over, BattingScorecard, BowlingScorecard } from "@/types";
 
 interface RecentBall {
@@ -49,6 +50,9 @@ export default function PublicLiveScorePage() {
   const params = useParams();
   const matchId = params.matchId as string;
 
+  const { connect, subscribe, unsubscribe, on, off, isConnected } =
+    useSocketStore();
+
   const [match, setMatch] = useState<MatchWithInnings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +85,40 @@ export default function PublicLiveScorePage() {
     fetchMatch();
   }, [matchId, fetchMatch]);
 
+  // Socket delivery is the primary sync path while connected.
   useEffect(() => {
     if (!matchId) return;
+    connect();
+  }, [matchId, connect]);
+
+  useEffect(() => {
+    if (!matchId || !isConnected) return;
+    subscribe(matchId);
+
+    const events = [
+      "score:updated",
+      "match:updated",
+      "innings:updated",
+      "innings:started",
+      "innings:ended",
+      "strike:swapped",
+      "commentary:added",
+    ];
+    const handler = () => fetchMatch();
+    events.forEach((event) => on(event, handler));
+
+    return () => {
+      unsubscribe(matchId);
+      events.forEach((event) => off(event, handler));
+    };
+  }, [matchId, isConnected, subscribe, unsubscribe, on, off, fetchMatch]);
+
+  // Polling only as a fallback when the socket is not connected.
+  useEffect(() => {
+    if (!matchId || isConnected) return;
     const interval = setInterval(fetchMatch, 30000);
     return () => clearInterval(interval);
-  }, [matchId, fetchMatch]);
+  }, [matchId, isConnected, fetchMatch]);
 
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -202,7 +235,7 @@ export default function PublicLiveScorePage() {
               <RefreshCw className="w-4 h-4" />
             </motion.button>
             <span className="text-[10px] text-muted hidden sm:block">
-              Auto-refresh: 30s
+              {isConnected ? "Live updates" : "Auto-refresh: 30s"}
             </span>
           </div>
         </div>
@@ -441,7 +474,9 @@ export default function PublicLiveScorePage() {
 
       <footer className="text-center py-4 border-t border-white/5">
         <p className="text-[10px] text-muted/50">
-          Powered by ScoreBolt &middot; Auto-refreshes every 30 seconds
+          {isConnected
+            ? "Powered by ScoreBolt &middot; Live updates"
+            : "Powered by ScoreBolt &middot; Auto-refreshes every 30 seconds"}
         </p>
       </footer>
     </div>

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
+import { isDirectImageUrl } from "@/lib/logo";
 
 interface Sponsor {
   id?: string;
@@ -13,6 +15,30 @@ interface Sponsor {
 
 interface SponsorGridProps {
   sponsors: Sponsor[];
+}
+
+function SafeSponsorLogo({ sponsor }: { sponsor: Sponsor }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = isDirectImageUrl(sponsor.logo) && !failed;
+
+  return (
+    <div className="flex h-8 md:h-12 w-32 md:w-48 items-center justify-center overflow-hidden">
+      {showImage ? (
+        <Image
+          src={sponsor.logo}
+          alt={sponsor.name}
+          width={200}
+          height={80}
+          className="h-full w-full object-contain opacity-70 hover:opacity-100 transition-opacity"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="truncate text-xs font-semibold uppercase tracking-wider text-white/40">
+          {sponsor.name}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export default function SponsorGrid({ sponsors }: SponsorGridProps) {
@@ -59,13 +85,7 @@ export default function SponsorGrid({ sponsors }: SponsorGridProps) {
                 transition={{ delay: i * 0.05 }}
                 className="p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.08] transition-colors"
               >
-                <Image
-                  src={sponsor.logo}
-                  alt={sponsor.name}
-                  width={200}
-                  height={80}
-                  className="h-8 md:h-12 w-auto object-contain opacity-70 hover:opacity-100 transition-opacity"
-                />
+                <SafeSponsorLogo sponsor={sponsor} />
               </motion.a>
             ))}
           </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
 import { notifyTeamCreated } from '@/lib/notifications'
+import { getLogoValidationError } from '@/lib/logo'
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,6 +56,14 @@ export async function POST(request: NextRequest) {
     if (!name) {
       return NextResponse.json(
         { error: 'Team name is required' },
+        { status: 400 }
+      )
+    }
+
+    const logoError = logo ? getLogoValidationError(logo) : null
+    if (logoError) {
+      return NextResponse.json(
+        { error: logoError },
         { status: 400 }
       )
     }

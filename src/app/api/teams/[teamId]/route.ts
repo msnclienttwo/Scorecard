@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { getLogoValidationError } from '@/lib/logo'
 
 export async function GET(
   request: NextRequest,
@@ -62,6 +63,13 @@ export async function PUT(
     const team = await prisma.team.findUnique({ where: { id: teamId } })
     if (!team) {
       return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+    }
+
+    if (body.logo) {
+      const logoError = getLogoValidationError(body.logo)
+      if (logoError) {
+        return NextResponse.json({ error: logoError }, { status: 400 })
+      }
     }
 
     const updated = await prisma.team.update({

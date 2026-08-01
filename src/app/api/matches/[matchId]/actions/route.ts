@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
+import { toUserError } from '@/lib/errors'
 import {
   startMatch,
   startInnings,
@@ -115,8 +116,7 @@ export async function PATCH(
         )
     }
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const { message, status } = toUserError(error)
+    return NextResponse.json({ error: message }, { status })
   }
 }

@@ -378,6 +378,7 @@ model MatchPlayer {
   @@unique([matchId, playerId])
   @@index([matchId])
   @@index([teamId])
+  @@index([matchId, teamId])
 }
 
 model PlayerOfMatch {
@@ -475,6 +476,7 @@ model Ball {
   over         Over      @relation(fields: [overId], references: [id], onDelete: Cascade)
 
   @@index([inningsId])
+  @@index([inningsId, ballNumber])
   @@index([overId])
   @@index([bowlerId])
   @@index([batsmanId])

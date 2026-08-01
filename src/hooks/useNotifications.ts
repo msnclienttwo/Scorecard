@@ -15,7 +15,7 @@ export function useNotifications() {
     queryKey: NOTIFICATIONS_KEY,
     queryFn: () => NotificationService.getNotifications({ limit: "50" }),
     staleTime: 10_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const notifications = query.data?.notifications ?? [];

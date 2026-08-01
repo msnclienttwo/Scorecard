@@ -71,6 +71,7 @@ export default function PlayersPage() {
       const data = await res.json();
       return (data.teams ?? []) as Team[];
     },
+    staleTime: 5 * 60_000,
   });
 
   const fetchPlayers = useCallback(async () => {
@@ -87,6 +88,7 @@ export default function PlayersPage() {
   const { data: players = [], isLoading } = useQuery({
     queryKey: ["players", search, activeRole, teamFilter],
     queryFn: fetchPlayers,
+    staleTime: 2 * 60_000,
   });
 
   const deleteMutation = useMutation({

@@ -24,7 +24,9 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
   connect: () => {
     const existing = get().socket;
-    if (existing?.connected) return;
+    // `active` is true while connected or attempting to connect, so repeated
+    // calls (e.g. StrictMode double-mount in dev) never create a second socket.
+    if (existing?.connected || existing?.active) return;
 
     const socketUrl =
       process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;

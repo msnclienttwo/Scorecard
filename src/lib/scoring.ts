@@ -6,12 +6,13 @@ import {
   notifyMatchStarted,
   type MatchNotificationContext,
 } from "@/lib/notifications";
+import { Prisma } from "@prisma/client";
 import type {
   Ball,
   BallType,
   Innings,
   Match,
-  Prisma,
+  Over,
   TossDecision,
   WicketType,
 } from "@prisma/client";
@@ -128,6 +129,16 @@ export function emitToMatch(matchId: string, event: string, data: Record<string,
   } catch {
     // socket layer unavailable — real-time degrades to polling
   }
+}
+
+// Single consistent scoring event contract. Every ball mutation (record,
+// edit, undo, delete) emits exactly this event with enough information for
+// any subscribed client to identify matchId + inningsId + ball and refetch.
+export function emitScoringUpdate(
+  matchId: string,
+  data: { inningsId: string; ball: Ball }
+): void {
+  emitToMatch(matchId, "score:updated", data);
 }
 
 function mapBallResult(runs: number, extraType: BallType | null): Ball["ballResult"] {
@@ -624,12 +635,16 @@ async function getOrCreateOverForBall(
   bowlerId: string
 ) {
   const overIndex = Math.floor(legalBallsBefore / 6);
-  let over = await tx.over.findFirst({ where: { inningsId: innings.id, overNumber: overIndex + 1 } });
-  if (!over) {
-    over = await tx.over.create({
+  const overNumber = overIndex + 1;
+
+  const existing = await tx.over.findFirst({ where: { inningsId: innings.id, overNumber } });
+  if (existing) return existing;
+
+  try {
+    return await tx.over.create({
       data: {
         inningsId: innings.id,
-        overNumber: overIndex + 1,
+        overNumber,
         bowlerId,
         totalRuns: 0,
         totalWickets: 0,
@@ -637,15 +652,20 @@ async function getOrCreateOverForBall(
         extras: 0,
       },
     });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const raced = await tx.over.findFirst({ where: { inningsId: innings.id, overNumber } });
+      if (raced) return raced;
+    }
+    throw err;
   }
-  return over;
 }
 
 export async function recordBall(
   matchId: string,
   user: AuthPayload,
   input: BallInput
-): Promise<{ ball: Ball; innings: Innings }> {
+): Promise<{ ball: Ball; innings: Innings; detail: InningsDetailPayload | null }> {
   const match = await requireScorerMatch(matchId, user);
 
   if (match.status !== "LIVE") {
@@ -715,39 +735,43 @@ export async function recordBall(
       },
     });
 
-    await recomputeInnings(tx, innings.id, match);
+    // Normal ball entry uses the incremental fast path (O(1) per delivery)
+    // instead of rebuilding every derived row from the full ball record.
+    await applyBallIncremental(tx, match, innings, ball, legalBalls, over);
     return ball;
   });
 
-  const updatedInnings = await prisma.innings.findUnique({ where: { id: innings.id } });
+  const detail = await getInningsDetail(innings.id);
+  const updatedInnings = detail;
 
   // fire notifications if the ball ended the innings / match
-  const freshMatch = await prisma.match.findUnique({
-    where: { id: matchId },
-    include: { matchScorers: true },
-  });
-  if (freshMatch && updatedInnings?.endedAt) {
-    if (freshMatch.status === "INNINGS_BREAK") {
-      try {
-        await notifyInningsEnded(notifContext(freshMatch), 1);
-      } catch (e) {
-        console.error("Error creating innings-break notification:", e);
-      }
-    } else if (freshMatch.status === "COMPLETED") {
-      try {
-        await notifyMatchCompleted(notifContext(freshMatch), freshMatch.result);
-      } catch (e) {
-        console.error("Error creating match-completed notification:", e);
+  if (updatedInnings?.endedAt) {
+    const freshMatch = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: { matchScorers: true },
+    });
+    if (freshMatch) {
+      if (freshMatch.status === "INNINGS_BREAK") {
+        try {
+          await notifyInningsEnded(notifContext(freshMatch), 1);
+        } catch (e) {
+          console.error("Error creating innings-break notification:", e);
+        }
+      } else if (freshMatch.status === "COMPLETED") {
+        try {
+          await notifyMatchCompleted(notifContext(freshMatch), freshMatch.result);
+        } catch (e) {
+          console.error("Error creating match-completed notification:", e);
+        }
       }
     }
   }
 
   if (updatedInnings) {
-    emitToMatch(matchId, "ball:added", { ball: result, innings: updatedInnings });
-    emitToMatch(matchId, "score:updated", { innings: updatedInnings });
+    emitScoringUpdate(matchId, { inningsId: innings.id, ball: result });
   }
 
-  return { ball: result, innings: updatedInnings! };
+  return { ball: result, innings: updatedInnings!, detail };
 }
 
 async function revertMatchCompletion(match: Match) {
@@ -763,7 +787,10 @@ async function revertMatchCompletion(match: Match) {
   });
 }
 
-export async function undoLastBall(matchId: string, user: AuthPayload) {
+export async function undoLastBall(
+  matchId: string,
+  user: AuthPayload
+): Promise<{ ball: Ball; innings: Innings | null; detail: InningsDetailPayload | null }> {
   const match = await requireScorerMatch(matchId, user);
 
   const innings = await prisma.innings.findFirst({
@@ -794,9 +821,12 @@ export async function undoLastBall(matchId: string, user: AuthPayload) {
     await recomputeInnings(tx, innings.id, match);
   });
 
-  emitToMatch(matchId, "ball:deleted", { ballId: lastBall.id, inningsId: innings.id });
+  const updatedInnings = await prisma.innings.findUnique({ where: { id: innings.id } });
+  const detail = updatedInnings ? await getInningsDetail(innings.id) : null;
+
+  emitScoringUpdate(matchId, { inningsId: innings.id, ball: lastBall });
   emitToMatch(matchId, "match:updated", {});
-  return lastBall;
+  return { ball: lastBall, innings: updatedInnings, detail };
 }
 
 export async function editBall(
@@ -804,7 +834,7 @@ export async function editBall(
   user: AuthPayload,
   ballId: string,
   patch: Partial<BallInput>
-) {
+): Promise<{ ball: Ball; innings: Innings | null; detail: InningsDetailPayload | null }> {
   const match = await requireScorerMatch(matchId, user);
 
   const existing = await prisma.ball.findUnique({ where: { id: ballId } });
@@ -848,11 +878,18 @@ export async function editBall(
   });
 
   const updatedBall = await prisma.ball.findUnique({ where: { id: ballId } });
-  emitToMatch(matchId, "ball:updated", { ball: updatedBall, inningsId: innings.id });
-  return updatedBall;
+  const updatedInnings = await prisma.innings.findUnique({ where: { id: innings.id } });
+  const detail = updatedInnings ? await getInningsDetail(innings.id) : null;
+
+  emitScoringUpdate(matchId, { inningsId: innings.id, ball: updatedBall ?? existing });
+  return { ball: updatedBall ?? existing, innings: updatedInnings, detail };
 }
 
-export async function deleteBall(matchId: string, user: AuthPayload, ballId: string) {
+export async function deleteBall(
+  matchId: string,
+  user: AuthPayload,
+  ballId: string
+): Promise<{ ball: Ball; innings: Innings | null; detail: InningsDetailPayload | null }> {
   const match = await requireScorerMatch(matchId, user);
 
   const existing = await prisma.ball.findUnique({ where: { id: ballId } });
@@ -877,8 +914,11 @@ export async function deleteBall(matchId: string, user: AuthPayload, ballId: str
     await recomputeInnings(tx, innings.id, match);
   });
 
-  emitToMatch(matchId, "ball:deleted", { ballId, inningsId: innings.id });
-  return existing;
+  const updatedInnings = await prisma.innings.findUnique({ where: { id: innings.id } });
+  const detail = updatedInnings ? await getInningsDetail(innings.id) : null;
+
+  emitScoringUpdate(matchId, { inningsId: innings.id, ball: existing });
+  return { ball: existing, innings: updatedInnings, detail };
 }
 
 // ---------------------------------------------------------------------------
@@ -891,6 +931,36 @@ async function activeInnings(matchId: string) {
     orderBy: { inningsNumber: "desc" },
   });
 }
+
+// Authoritative, fully-hydrated innings used to seed the React Query cache
+// from mutation responses. Overs are explicitly ordered by overNumber ASC and
+// balls by ballNumber ASC so the current/latest over is deterministic.
+export async function getInningsDetail(inningsId: string) {
+  return prisma.innings.findUnique({
+    where: { id: inningsId },
+    include: {
+      battingCard: {
+        include: { player: { select: { id: true, name: true } } },
+        orderBy: { runs: "desc" },
+      },
+      bowlingCard: {
+        include: { player: { select: { id: true, name: true } } },
+        orderBy: { wickets: "desc" },
+      },
+      overs: {
+        orderBy: { overNumber: "asc" },
+        include: {
+          balls: { orderBy: { ballNumber: "asc" }, include: { over: true } },
+        },
+      },
+      fallOfWickets: { orderBy: { wicketNumber: "asc" } },
+    },
+  });
+}
+
+export type InningsDetailPayload = NonNullable<
+  Awaited<ReturnType<typeof getInningsDetail>>
+>;
 
 export async function setOpeners(
   matchId: string,
@@ -914,7 +984,7 @@ export async function setOpeners(
     bowlerId: input.bowlerId,
   });
 
-  return prisma.innings.update({
+  const updated = await prisma.innings.update({
     where: { id: innings.id },
     data: {
       strikerId: input.strikerId,
@@ -923,6 +993,9 @@ export async function setOpeners(
       battingOrderCount: 2,
     },
   });
+
+  emitToMatch(matchId, "innings:updated", { innings: updated });
+  return updated;
 }
 
 export async function setBowler(matchId: string, user: AuthPayload, bowlerId: string) {
@@ -945,10 +1018,13 @@ export async function setBowler(matchId: string, user: AuthPayload, bowlerId: st
     throw new Error("A bowler cannot bowl two consecutive overs.");
   }
 
-  return prisma.innings.update({
+  const updated = await prisma.innings.update({
     where: { id: innings.id },
     data: { currentBowlerId: bowlerId },
   });
+
+  emitToMatch(matchId, "innings:updated", { innings: updated });
+  return updated;
 }
 
 export async function setBatsmen(
@@ -970,10 +1046,13 @@ export async function setBatsmen(
     throw new Error("The striker and non-striker must be different players.");
   }
 
-  return prisma.innings.update({
+  const updated = await prisma.innings.update({
     where: { id: innings.id },
     data: { strikerId: input.strikerId, nonStrikerId: input.nonStrikerId },
   });
+
+  emitToMatch(matchId, "innings:updated", { innings: updated });
+  return updated;
 }
 
 export async function swapStrike(matchId: string, user: AuthPayload) {
@@ -991,6 +1070,351 @@ export async function swapStrike(matchId: string, user: AuthPayload) {
 
   emitToMatch(matchId, "strike:swapped", { innings: updated });
   return updated;
+}
+
+// ---------------------------------------------------------------------------
+// Incremental ball application — O(1) fast path for recordBall
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies the derived-state deltas for a single newly created delivery without
+ * replaying the whole innings. Every aggregate here mirrors what
+ * `recomputeInnings` produces, so the incremental and full-rebuild paths stay
+ * consistent. Undo / edit / delete still call `recomputeInnings`.
+ */
+async function applyBallIncremental(
+  tx: Prisma.TransactionClient,
+  match: Pick<Match, "id" | "totalOvers">,
+  innings: Innings,
+  ball: Ball,
+  legalBallsBefore: number,
+  over: Over
+) {
+  const legal = isLegalDelivery(ball.extraType);
+  const newLegalCount = legalBallsBefore + (legal ? 1 : 0);
+  const overComplete = legal && legalBallsBefore % 6 === 5;
+  const outId = ball.isWicket ? ball.dismissedPlayerId ?? ball.batsmanId : null;
+
+  // --- over aggregate ---
+  const newOverBalls = over.ballsCount + (legal ? 1 : 0);
+  const newOverRuns = over.totalRuns + ball.runs + ball.extraRuns;
+  const newOverWickets = over.totalWickets + (ball.isWicket ? 1 : 0);
+  const newOverCompleted = newOverBalls >= 6;
+  const newOverIsMaiden = newOverCompleted && newOverRuns === 0 && newOverWickets === 0;
+  const overCompletedNow = !over.isCompleted && newOverCompleted;
+
+  await tx.over.update({
+    where: { id: over.id },
+    data: {
+      totalRuns: newOverRuns,
+      totalWickets: newOverWickets,
+      ballsCount: newOverBalls,
+      extras: over.extras + ball.extraRuns,
+      isCompleted: newOverCompleted,
+      isMaiden: newOverIsMaiden,
+    },
+  });
+
+  // --- player names for commentary + fall of wicket (single lookup) ---
+  const nameIds = [
+    ...new Set([
+      ball.batsmanId,
+      ball.bowlerId,
+      ...(ball.fielderId ? [ball.fielderId] : []),
+      ...(outId ? [outId] : []),
+    ]),
+  ];
+  const named = await tx.player.findMany({
+    where: { id: { in: nameIds } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(named.map((p) => [p.id, p.name]));
+
+  // --- batting cards ---
+  const batPlayerIds = [
+    ...new Set([ball.batsmanId, ball.nonStrikerId, ...(outId ? [outId] : [])]),
+  ];
+  const existingBat = await tx.battingScorecard.findMany({
+    where: { inningsId: innings.id, playerId: { in: batPlayerIds } },
+    select: {
+      playerId: true,
+      batPosition: true,
+      runs: true,
+      balls: true,
+      fours: true,
+      sixes: true,
+    },
+  });
+  const batById = new Map(existingBat.map((c) => [c.playerId, c]));
+  let battingOrder = innings.battingOrderCount;
+  const nextBatPosition = () => ++battingOrder;
+
+  // Runs credited to the striker on this delivery (drives the batting card,
+  // fours/sixes and milestone detection). Mirrors recomputeInnings exactly.
+  const batRuns =
+    ball.extraType === "NO_BALL"
+      ? ball.runs
+      : ball.extraType === "BYE" ||
+          ball.extraType === "LEG_BYE" ||
+          ball.extraType === "WIDE"
+        ? 0
+        : ball.runs;
+
+  for (const pid of batPlayerIds) {
+    const old = batById.get(pid);
+    const isStriker = pid === ball.batsmanId;
+    const runs = (old?.runs ?? 0) + (isStriker ? batRuns : 0);
+    const ballsFaced =
+      (old?.balls ?? 0) + (isStriker && legal && ball.extraType !== "NO_BALL" ? 1 : 0);
+    const fours = (old?.fours ?? 0) + (isStriker && batRuns === 4 ? 1 : 0);
+    const sixes = (old?.sixes ?? 0) + (isStriker && batRuns === 6 ? 1 : 0);
+    const isDismissed = outId === pid;
+    const batPosition = old?.batPosition ?? nextBatPosition();
+    const isNotOut = !isDismissed;
+
+    await tx.battingScorecard.upsert({
+      where: { inningsId_playerId: { inningsId: innings.id, playerId: pid } },
+      update: {
+        runs,
+        balls: ballsFaced,
+        fours,
+        sixes,
+        isNotOut,
+        battingOrder: batPosition,
+        strikeRate:
+          ballsFaced > 0 ? parseFloat(((runs / ballsFaced) * 100).toFixed(2)) : 0,
+        ...(isDismissed
+          ? {
+              dismissalType: ball.wicketType ?? null,
+              bowlerId: ball.bowlerId,
+              fielderId: ball.fielderId ?? null,
+            }
+          : {}),
+      },
+      create: {
+        inningsId: innings.id,
+        playerId: pid,
+        batPosition,
+        runs,
+        balls: ballsFaced,
+        fours,
+        sixes,
+        isNotOut,
+        dismissalType: isDismissed ? ball.wicketType ?? null : null,
+        bowlerId: isDismissed ? ball.bowlerId : null,
+        fielderId: isDismissed ? ball.fielderId ?? null : null,
+        strikeRate:
+          ballsFaced > 0 ? parseFloat(((runs / ballsFaced) * 100).toFixed(2)) : 0,
+        battingOrder: batPosition,
+      },
+    });
+  }
+
+  // --- bowling card ---
+  const existingBowl = await tx.bowlingScorecard.findUnique({
+    where: { inningsId_playerId: { inningsId: innings.id, playerId: ball.bowlerId } },
+  });
+  const bowlBalls =
+    (existingBowl ? parseOversToBalls(existingBowl.overs) : 0) + (legal ? 1 : 0);
+  const bowlRuns = (existingBowl?.runs ?? 0) + ball.runs + ball.extraRuns;
+  const bowlWickets = (existingBowl?.wickets ?? 0) + (ball.isWicket ? 1 : 0);
+  const bowlWides = (existingBowl?.wides ?? 0) + (ball.extraType === "WIDE" ? 1 : 0);
+  const bowlNoBalls = (existingBowl?.noBalls ?? 0) + (ball.extraType === "NO_BALL" ? 1 : 0);
+  const bowlDotBalls =
+    (existingBowl?.dotBalls ?? 0) +
+    (legal && ball.runs + ball.extraRuns === 0 && !ball.isWicket ? 1 : 0);
+  const bowlMaidens =
+    (existingBowl?.maidens ?? 0) + (overCompletedNow && newOverIsMaiden ? 1 : 0);
+  const bowlOvers = bowlBalls / 6;
+  const bowlEconomy = bowlOvers > 0 ? parseFloat((bowlRuns / bowlOvers).toFixed(2)) : 0;
+  const bowlStrikeRate = bowlWickets > 0 ? parseFloat((bowlBalls / bowlWickets).toFixed(2)) : 0;
+
+  await tx.bowlingScorecard.upsert({
+    where: { inningsId_playerId: { inningsId: innings.id, playerId: ball.bowlerId } },
+    update: {
+      overs: bowlOvers,
+      maidens: bowlMaidens,
+      runs: bowlRuns,
+      wickets: bowlWickets,
+      wides: bowlWides,
+      noBalls: bowlNoBalls,
+      economy: bowlEconomy,
+      strikeRate: bowlStrikeRate,
+      dotBalls: bowlDotBalls,
+    },
+    create: {
+      inningsId: innings.id,
+      playerId: ball.bowlerId,
+      overs: bowlOvers,
+      maidens: bowlMaidens,
+      runs: bowlRuns,
+      wickets: bowlWickets,
+      wides: bowlWides,
+      noBalls: bowlNoBalls,
+      economy: bowlEconomy,
+      strikeRate: bowlStrikeRate,
+      dotBalls: bowlDotBalls,
+    },
+  });
+
+  // --- strike rotation + innings totals ---
+  let strikerId = innings.strikerId;
+  let nonStrikerId = innings.nonStrikerId;
+  if (strikerId === null) strikerId = ball.batsmanId;
+  if (nonStrikerId === null) nonStrikerId = ball.nonStrikerId;
+
+  const completedRuns =
+    ball.extraType === "BYE" || ball.extraType === "LEG_BYE"
+      ? ball.extraRuns
+      : ball.runs;
+
+  if (ball.isWicket) {
+    const remaining = outId === strikerId ? nonStrikerId : strikerId;
+    if (remaining) strikerId = remaining;
+    nonStrikerId = null;
+  } else if (ball.extraType !== "WIDE" && completedRuns % 2 === 1 && nonStrikerId) {
+    [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
+  }
+  if (overComplete && strikerId && nonStrikerId) {
+    [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
+  }
+
+  const newTotalRuns = innings.totalRuns + ball.runs + ball.extraRuns;
+  const newTotalWickets = innings.totalWickets + (ball.isWicket ? 1 : 0);
+  const newTotalOvers = formatOversFromBalls(newLegalCount);
+  const newCurrentBowlerId = newLegalCount % 6 !== 0 ? ball.bowlerId : null;
+
+  await tx.innings.update({
+    where: { id: innings.id },
+    data: {
+      totalRuns: newTotalRuns,
+      totalWickets: newTotalWickets,
+      totalOvers: newTotalOvers,
+      extras: innings.extras + ball.extraRuns,
+      strikerId,
+      nonStrikerId,
+      currentBowlerId: newCurrentBowlerId,
+      battingOrderCount: battingOrder,
+    },
+  });
+
+  // --- fall of wicket ---
+  if (ball.isWicket) {
+    await tx.fallOfWicket.create({
+      data: {
+        inningsId: innings.id,
+        wicketNumber: newTotalWickets,
+        playerId: outId!,
+        runs: newTotalRuns,
+        overs: newTotalOvers,
+        bowlerId: ball.bowlerId,
+        batterName: nameById.get(outId!) ?? "",
+      },
+    });
+  }
+
+  // --- commentary + highlights + milestones ---
+  const strikerName = nameById.get(ball.batsmanId) ?? "Batter";
+  const bowlerName = nameById.get(ball.bowlerId) ?? "Bowler";
+  const fielderName = ball.fielderId ? nameById.get(ball.fielderId) : undefined;
+  const content = buildBallCommentary(ball, strikerName, bowlerName, fielderName);
+  const isHighlight = ball.isWicket || ball.runs === 4 || ball.runs === 6;
+  const overNumber = over.overNumber;
+
+  await tx.commentary.create({
+    data: {
+      matchId: match.id,
+      inningsNumber: innings.inningsNumber,
+      overNumber,
+      ballNumber: newLegalCount,
+      isAutomatic: true,
+      isHighlight,
+      eventType: ball.isWicket ? "WICKET" : ball.runs === 6 ? "SIX" : ball.runs === 4 ? "FOUR" : "BALL",
+      content,
+    },
+  });
+
+  if (isHighlight) {
+    await tx.matchEvent.create({
+      data: {
+        matchId: match.id,
+        type: ball.isWicket ? "WICKET" : ball.runs === 6 ? "SIX" : "BOUNDARY",
+        description: content,
+        overNumber,
+        ballNumber: newLegalCount,
+        inningsNumber: innings.inningsNumber,
+        data: ball.isWicket ? { wicketType: ball.wicketType } : { runs: ball.runs },
+      },
+    });
+  }
+
+  // Milestones crossed by this delivery (fifty / century).
+  const runsBeforeBall = batById.get(ball.batsmanId)?.runs ?? 0;
+  const runsSoFar = runsBeforeBall + batRuns;
+  if (runsSoFar >= 50 && runsBeforeBall < 50) {
+    await tx.commentary.create({
+      data: {
+        matchId: match.id,
+        inningsNumber: innings.inningsNumber,
+        overNumber,
+        ballNumber: newLegalCount,
+        isAutomatic: true,
+        isHighlight: true,
+        eventType: "MILESTONE",
+        content: `${strikerName} brings up his fifty!`,
+      },
+    });
+  }
+  if (runsSoFar >= 100 && runsBeforeBall < 100) {
+    await tx.commentary.create({
+      data: {
+        matchId: match.id,
+        inningsNumber: innings.inningsNumber,
+        overNumber,
+        ballNumber: newLegalCount,
+        isAutomatic: true,
+        isHighlight: true,
+        eventType: "MILESTONE",
+        content: `${strikerName} reaches a magnificent century!`,
+      },
+    });
+  }
+  if (ball.isWicket && bowlWickets === 5) {
+    await tx.commentary.create({
+      data: {
+        matchId: match.id,
+        inningsNumber: innings.inningsNumber,
+        overNumber,
+        ballNumber: newLegalCount,
+        isAutomatic: true,
+        isHighlight: true,
+        eventType: "MILESTONE",
+        content: `${bowlerName} claims a five-wicket haul!`,
+      },
+    });
+  }
+
+  if (overComplete) {
+    await tx.commentary.create({
+      data: {
+        matchId: match.id,
+        inningsNumber: innings.inningsNumber,
+        overNumber: overNumber + 1,
+        isAutomatic: true,
+        isHighlight: false,
+        eventType: "END_OF_OVER",
+        content: `End of over ${overNumber + 1}: ${newOverRuns} runs.`,
+      },
+    });
+  }
+
+  // --- innings end detection (uses the post-ball totals) ---
+  await finalizeInningsIfNeeded(tx, match, {
+    ...innings,
+    totalRuns: newTotalRuns,
+    totalWickets: newTotalWickets,
+    totalOvers: newTotalOvers,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1072,18 +1496,30 @@ async function recomputeInnings(
 
   const overIdByIndex = new Map<number, string>();
   for (const [index, agg] of overAggs) {
+    const overNumber = index + 1;
     const completed = agg.legalBalls >= 6;
-    const over = await tx.over.create({
-      data: {
-        inningsId,
-        overNumber: index + 1,
+    const isMaiden = completed && agg.legalBalls === 6 && agg.runs === 0 && agg.wickets === 0;
+    const over = await tx.over.upsert({
+      where: { inningsId_overNumber: { inningsId, overNumber } },
+      update: {
         bowlerId: agg.bowlerId,
         totalRuns: agg.runs,
         totalWickets: agg.wickets,
         ballsCount: agg.legalBalls,
         extras: agg.extras,
         isCompleted: completed,
-        isMaiden: completed && agg.legalBalls === 6 && agg.runs === 0 && agg.wickets === 0,
+        isMaiden,
+      },
+      create: {
+        inningsId,
+        overNumber,
+        bowlerId: agg.bowlerId,
+        totalRuns: agg.runs,
+        totalWickets: agg.wickets,
+        ballsCount: agg.legalBalls,
+        extras: agg.extras,
+        isCompleted: completed,
+        isMaiden,
       },
     });
     overIdByIndex.set(index, over.id);
@@ -1173,8 +1609,22 @@ async function recomputeInnings(
 
   for (const card of batting.values()) {
     const ballsFaced = card.balls;
-    await tx.battingScorecard.create({
-      data: {
+    await tx.battingScorecard.upsert({
+      where: { inningsId_playerId: { inningsId, playerId: card.playerId } },
+      update: {
+        batPosition: card.batPosition,
+        runs: card.runs,
+        balls: card.balls,
+        fours: card.fours,
+        sixes: card.sixes,
+        isNotOut: card.isNotOut,
+        dismissalType: card.dismissalType,
+        bowlerId: card.bowlerId,
+        fielderId: card.fielderId,
+        strikeRate: ballsFaced > 0 ? parseFloat(((card.runs / ballsFaced) * 100).toFixed(2)) : 0,
+        battingOrder: card.batPosition,
+      },
+      create: {
         inningsId,
         playerId: card.playerId,
         batPosition: card.batPosition,
@@ -1223,8 +1673,20 @@ async function recomputeInnings(
   }
   for (const card of bowling.values()) {
     const overs = card.balls / 6;
-    await tx.bowlingScorecard.create({
-      data: {
+    await tx.bowlingScorecard.upsert({
+      where: { inningsId_playerId: { inningsId, playerId: card.playerId } },
+      update: {
+        overs,
+        maidens: card.maidens,
+        runs: card.runs,
+        wickets: card.wickets,
+        wides: card.wides,
+        noBalls: card.noBalls,
+        economy: overs > 0 ? parseFloat((card.runs / overs).toFixed(2)) : 0,
+        strikeRate: card.wickets > 0 ? parseFloat((card.balls / card.wickets).toFixed(2)) : 0,
+        dotBalls: card.dotBalls,
+      },
+      create: {
         inningsId,
         playerId: card.playerId,
         overs,
@@ -1244,8 +1706,10 @@ async function recomputeInnings(
   const fowList: { ball: Ball; runs: number; overs: number }[] = [];
   let cumRuns = 0;
   let cumLegal = 0;
-  let strikerId: string | null = null;
-  let nonStrikerId: string | null = null;
+  // Seed with the persisted openers so an empty ball record (e.g. after
+  // undoing every delivery) keeps the innings ready to continue scoring.
+  let strikerId: string | null = innings.strikerId;
+  let nonStrikerId: string | null = innings.nonStrikerId;
 
   for (const ball of balls) {
     const legal = isLegalDelivery(ball.extraType);
@@ -1262,16 +1726,23 @@ async function recomputeInnings(
       fowList.push({ ball, runs: cumRuns, overs: formatOversFromBalls(cumLegal) });
     }
 
-    if (legal && !ball.isWicket && ball.runs % 2 === 1 && nonStrikerId) {
-      [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
-    }
+    // Runs that physically happened on this delivery (drives strike rotation).
+    // Byes / leg-byes run entirely on extras; the striker is not credited but
+    // the batters still crossed. Wides never rotate the strike.
+    const completedRuns =
+      ball.extraType === "BYE" || ball.extraType === "LEG_BYE"
+        ? ball.extraRuns
+        : ball.runs;
+
     if (ball.isWicket) {
-      if (outId === strikerId) {
-        strikerId = nonStrikerId;
-        nonStrikerId = null;
-      } else if (outId === nonStrikerId) {
-        nonStrikerId = null;
-      }
+      // The surviving batter holds the striker slot; the incoming batter is
+      // chosen by the scorer afterwards via set-batsmen. This keeps the ball
+      // record as the single source of truth across refreshes.
+      const remaining = outId === strikerId ? nonStrikerId : strikerId;
+      if (remaining) strikerId = remaining;
+      nonStrikerId = null;
+    } else if (ball.extraType !== "WIDE" && completedRuns % 2 === 1 && nonStrikerId) {
+      [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
     }
     if (overComplete && strikerId && nonStrikerId) {
       [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
@@ -1281,8 +1752,16 @@ async function recomputeInnings(
   let fowNumber = 0;
   for (const fow of fowList) {
     fowNumber += 1;
-    await tx.fallOfWicket.create({
-      data: {
+    await tx.fallOfWicket.upsert({
+      where: { inningsId_wicketNumber: { inningsId, wicketNumber: fowNumber } },
+      update: {
+        playerId: fow.ball.dismissedPlayerId ?? fow.ball.batsmanId,
+        runs: fow.runs,
+        overs: fow.overs,
+        bowlerId: fow.ball.bowlerId,
+        batterName: nameById.get(fow.ball.dismissedPlayerId ?? fow.ball.batsmanId) ?? "",
+      },
+      create: {
         inningsId,
         wicketNumber: fowNumber,
         playerId: fow.ball.dismissedPlayerId ?? fow.ball.batsmanId,
@@ -1302,9 +1781,11 @@ async function recomputeInnings(
 
   const lastOverAgg = balls.length > 0 ? overAggs.get(Math.floor(totalLegal / 6) - (totalLegal % 6 === 0 ? 1 : 0)) : undefined;
   const currentBowlerId =
-    balls.length > 0 && lastOverAgg && lastOverAgg.legalBalls < 6
-      ? balls[balls.length - 1].bowlerId
-      : null;
+    balls.length === 0
+      ? innings.currentBowlerId
+      : balls.length > 0 && lastOverAgg && lastOverAgg.legalBalls < 6
+        ? balls[balls.length - 1].bowlerId
+        : null;
 
   await tx.innings.update({
     where: { id: inningsId },
@@ -1439,8 +1920,14 @@ async function recomputeInnings(
     }
   }
 
-  // --- innings end detection ---
-  await finalizeInningsIfNeeded(tx, match, innings);
+  // --- innings end detection (uses the freshly computed totals, not the
+  // pre-update snapshot fetched at the top of this function) ---
+  await finalizeInningsIfNeeded(tx, match, {
+    ...innings,
+    totalRuns,
+    totalWickets,
+    totalOvers: formatOversFromBalls(totalLegal),
+  });
 }
 
 async function finalizeInningsIfNeeded(

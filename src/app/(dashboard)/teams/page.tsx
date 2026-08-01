@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
 import Link from "next/link";
 import {
   PlusCircle,
@@ -15,6 +14,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn, generateInitials } from "@/lib/utils";
+import { TeamLogo } from "@/components/team/TeamLogo";
 import { CreateTeamModal } from "@/components/teams/CreateTeamModal";
 import { EditTeamModal } from "@/components/teams/EditTeamModal";
 import { Modal } from "@/components/ui/Modal";
@@ -66,6 +66,7 @@ export default function TeamsPage() {
   const { data: teams = [], isLoading } = useQuery({
     queryKey: ["teams", search],
     queryFn: fetchTeams,
+    staleTime: 5 * 60_000,
   });
 
   const deleteMutation = useMutation({
@@ -139,18 +140,18 @@ export default function TeamsPage() {
               <motion.div key={team.id} variants={item}>
                 <div className="glass-card group rounded-2xl p-5">
                   <div className="flex items-start gap-4">
-                    <Link href={`/teams/${team.id}`} className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-lg font-bold text-white flex-shrink-0 hover:opacity-80 transition-opacity"
-                      style={{
-                        background: team.primaryColor && team.secondaryColor
-                          ? `linear-gradient(135deg, ${team.primaryColor}, ${team.secondaryColor})`
-                          : undefined,
-                      }}
-                    >
-                      {team.logo ? (
-                        <Image src={team.logo} alt={team.name} width={56} height={56} className="w-full h-full rounded-xl object-cover" />
-                      ) : (
-                        team.shortName || generateInitials(team.name)
-                      )}
+                    <Link href={`/teams/${team.id}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
+                      <TeamLogo
+                        src={team.logo}
+                        name={team.name}
+                        fallback={team.shortName || generateInitials(team.name)}
+                        size={56}
+                        background={
+                          team.primaryColor && team.secondaryColor
+                            ? `linear-gradient(135deg, ${team.primaryColor}, ${team.secondaryColor})`
+                            : undefined
+                        }
+                      />
                     </Link>
                     <div className="flex-1 min-w-0">
                       <Link href={`/teams/${team.id}`} className="truncate font-semibold text-foreground hover:text-primary transition-colors">

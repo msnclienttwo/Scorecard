@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MatchCard } from "@/components/match/MatchCard";
+import { TeamLogo } from "@/components/team/TeamLogo";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -43,6 +44,7 @@ export default function TeamPage() {
       if (!res.ok) throw new Error("Team not found");
       return res.json();
     },
+    staleTime: 5 * 60_000,
   });
 
   if (isLoading) {
@@ -91,24 +93,14 @@ export default function TeamPage() {
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(37,99,235,0.1),transparent_50%)]" />
         <div className="relative flex flex-col md:flex-row items-start gap-6">
-          <div
-            className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl font-bold text-white flex-shrink-0"
-            style={{
-              background: `linear-gradient(135deg, ${team.primaryColor || "#2563EB"}, ${team.secondaryColor || "#00D4FF"})`,
-            }}
-          >
-            {team.logo ? (
-              <Image
-                src={team.logo}
-                alt={team.name}
-                width={96}
-                height={96}
-                className="w-full h-full rounded-2xl object-cover"
-              />
-            ) : (
-              team.shortName || team.name?.substring(0, 3)
-            )}
-          </div>
+          <TeamLogo
+            src={team.logo}
+            name={team.name}
+            fallback={team.shortName || team.name?.substring(0, 3)}
+            size={96}
+            rounded="rounded-2xl"
+            background={`linear-gradient(135deg, ${team.primaryColor || "#2563EB"}, ${team.secondaryColor || "#00D4FF"})`}
+          />
           <div className="flex-1">
             <h1 className="text-3xl font-bold text-white mb-2">{team.name}</h1>
             <div className="flex flex-wrap items-center gap-4 text-white/60 text-sm">

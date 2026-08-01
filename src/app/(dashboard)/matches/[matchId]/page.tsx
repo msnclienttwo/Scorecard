@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Cloud,
@@ -13,10 +13,13 @@ import {
   CircleDot,
   MessageSquare,
   Activity,
+  Play,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { StartMatchModal } from "@/components/match/StartMatchModal";
 import type { Match, Team, Innings } from "@/types";
 
 interface MatchWithDetails extends Match {
@@ -27,15 +30,13 @@ interface MatchWithDetails extends Match {
     bowlingCard: { playerId: string; overs: number; runs: number; wickets: number }[];
     overs: { overNumber: number; totalRuns: number; totalWickets: number; ballsCount: number }[];
   })[];
+  squads: {
+    teamId: string;
+    player: { id: string; name: string; shortName?: string | null; role?: string | null };
+  }[];
+  scoringAccess: { allowed: boolean; reason?: string | null };
   tournament?: { id: string; name: string } | null;
 }
-
-const quickActions = [
-  { label: "Live Scoring", href: "score", icon: Zap, color: "text-success", bg: "bg-success/10" },
-  { label: "Full Scorecard", href: "scorecard", icon: Activity, color: "text-primary", bg: "bg-primary/10" },
-  { label: "Ball-by-Ball", href: "ball-by-ball", icon: CircleDot, color: "text-accent", bg: "bg-accent/10" },
-  { label: "Commentary", href: "commentary", icon: MessageSquare, color: "text-warning", bg: "bg-warning/10" },
-];
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -53,6 +54,8 @@ export default function MatchOverviewPage({
   params: Promise<{ matchId: string }>;
 }) {
   const { matchId } = use(params);
+  const router = useRouter();
+  const [startOpen, setStartOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["match", matchId],
@@ -67,6 +70,69 @@ export default function MatchOverviewPage({
   });
 
   const match = data?.match;
+
+  const canScore = match?.scoringAccess?.allowed ?? false;
+
+  const quickActions = useMemo(() => {
+    if (!match) return [];
+    const list: {
+      label: string;
+      href: string;
+      icon: typeof Zap;
+      color: string;
+      bg: string;
+    }[] = [
+      {
+        label: match.status === "COMPLETED" ? "View Scorecard" : "Full Scorecard",
+        href: "scorecard",
+        icon: Activity,
+        color: "text-primary",
+        bg: "bg-primary/10",
+      },
+      {
+        label: "Ball-by-Ball",
+        href: "ball-by-ball",
+        icon: CircleDot,
+        color: "text-accent",
+        bg: "bg-accent/10",
+      },
+      {
+        label: "Commentary",
+        href: "commentary",
+        icon: MessageSquare,
+        color: "text-warning",
+        bg: "bg-warning/10",
+      },
+    ];
+    if (match.status === "LIVE" || match.status === "INNINGS_BREAK") {
+      list.push(
+        canScore
+          ? {
+              label: "Continue Scoring",
+              href: "live",
+              icon: Zap,
+              color: "text-success",
+              bg: "bg-success/10",
+            }
+          : {
+              label: "View Live",
+              href: `/score/${match.id}`,
+              icon: Zap,
+              color: "text-success",
+              bg: "bg-success/10",
+            }
+      );
+    } else if (match.status === "READY") {
+      list.push({
+        label: "Start Innings",
+        href: "live",
+        icon: Zap,
+        color: "text-success",
+        bg: "bg-success/10",
+      });
+    }
+    return list;
+  }, [match, canScore]);
 
   if (isLoading) {
     return (
@@ -181,10 +247,78 @@ export default function MatchOverviewPage({
       <motion.div variants={itemVariants}>
         <h3 className="text-sm font-medium text-muted mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {match.status === "SCHEDULED" && canScore && (
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={() => setStartOpen(true)}
+              className="col-span-2 md:col-span-4 bg-gradient-to-br from-primary/20 via-white/5 to-accent/10 border border-primary/30 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center">
+                  <Play className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-white font-semibold">Start Match</p>
+                  <p className="text-sm text-muted">
+                    Set the toss, verify the Playing XI, pick openers and begin
+                    the first innings.
+                  </p>
+                </div>
+              </div>
+              <span className="text-primary text-sm font-medium">Begin &rarr;</span>
+            </motion.button>
+          )}
+          {match.status === "SCHEDULED" && !canScore && (
+            <p className="col-span-2 md:col-span-4 text-xs text-muted bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+              {match.scoringAccess?.reason ??
+                "Only the match creator or assigned scorers can start this match."}
+            </p>
+          )}
+          {(match.status === "LIVE" || match.status === "INNINGS_BREAK") &&
+            (canScore ? (
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={() => router.push(`/matches/${matchId}/live`)}
+                className="col-span-2 md:col-span-4 bg-gradient-to-br from-success/20 via-white/5 to-accent/10 border border-success/30 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-success/20 flex items-center justify-center">
+                    <Zap className="w-6 h-6 text-success" />
+                  </div>
+                  <div>
+                    <p className="text-white font-semibold">Continue Scoring</p>
+                    <p className="text-sm text-muted">
+                      {match.status === "INNINGS_BREAK"
+                        ? "The innings break is over. Resume the next innings and keep scoring."
+                        : "This match is live. Resume scoring exactly where you left off."}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-success text-sm font-medium">Resume &rarr;</span>
+              </motion.button>
+            ) : (
+              <Link
+                href={`/score/${matchId}`}
+                className="col-span-2 md:col-span-4 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3 text-left transition-colors hover:bg-white/8"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <Zap className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-white font-semibold">View Live Score</p>
+                    <p className="text-sm text-muted">Watch the live scoreboard for this match.</p>
+                  </div>
+                </div>
+                <span className="text-primary text-sm font-medium">View &rarr;</span>
+              </Link>
+            ))}
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
-              <Link key={action.label} href={`/matches/${matchId}/${action.href}`}>
+              <Link key={action.label} href={action.href.startsWith("/") ? action.href : `/matches/${matchId}/${action.href}`}>
                 <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 text-center cursor-pointer transition-colors hover:bg-white/8">
                   <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-2", action.bg)}>
@@ -258,6 +392,13 @@ export default function MatchOverviewPage({
           </motion.div>
         )}
       </div>
+
+      <StartMatchModal
+        isOpen={startOpen}
+        onClose={() => setStartOpen(false)}
+        match={match}
+        onStarted={() => router.push(`/matches/${matchId}/live`)}
+      />
     </motion.div>
   );
 }

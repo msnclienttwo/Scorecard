@@ -17,8 +17,18 @@ import { cn } from "@/lib/utils";
 const tabs = ["All", "Live", "Upcoming", "Completed"] as const;
 
 interface Team {
+  id: string;
   name: string;
   shortName: string;
+}
+
+interface InningsSummary {
+  id: string;
+  inningsNumber: number;
+  battingTeam: string;
+  totalRuns: number;
+  totalWickets: number;
+  totalOvers: number;
 }
 
 interface Match {
@@ -29,6 +39,8 @@ interface Match {
   status: string;
   scheduledAt: string;
   venue: string;
+  innings?: InningsSummary[];
+  scoringAccess?: { allowed: boolean };
 }
 
 interface PaginatedResponse {
@@ -58,6 +70,21 @@ function formatDate(dateStr: string) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function getMatchAction(match: Match): { label: string; href: string } {
+  if (match.status === "LIVE") {
+    return match.scoringAccess?.allowed
+      ? { label: "Continue Scoring", href: `/matches/${match.id}/live` }
+      : { label: "View Live", href: `/score/${match.id}` };
+  }
+  if (match.status === "SCHEDULED") {
+    return { label: "Start Match", href: `/matches/${match.id}` };
+  }
+  if (match.status === "COMPLETED") {
+    return { label: "View Scorecard", href: `/matches/${match.id}/scorecard` };
+  }
+  return { label: "View Details", href: `/matches/${match.id}` };
 }
 
 export default function MatchesPage() {
@@ -162,53 +189,79 @@ export default function MatchesPage() {
         </motion.div>
       ) : (
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {matches.map((match) => (
-            <motion.div key={match.id} variants={item}>
-              <Link href={`/matches/${match.id}`}>
-                <div className="glass-card group rounded-2xl p-5 transition-all hover:border-white/15 cursor-pointer">
-                  <div className="mb-3 flex items-center justify-between">
-                    {match.status === "LIVE" ? (
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
-                        <span className="relative flex h-2 w-2">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                          <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+          {matches.map((match) => {
+            const latestInnings =
+              match.innings && match.innings.length > 0
+                ? match.innings[match.innings.length - 1]
+                : null;
+            const action = getMatchAction(match);
+            const homeScore =
+              latestInnings && latestInnings.battingTeam === match.homeTeam.id
+                ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                : "";
+            const awayScore =
+              latestInnings && latestInnings.battingTeam === match.awayTeam.id
+                ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                : "";
+            return (
+              <motion.div key={match.id} variants={item}>
+                <div className="glass-card group flex flex-col rounded-2xl p-5 transition-all hover:border-white/15">
+                  <Link href={`/matches/${match.id}`} className="flex-1">
+                    <div className="mb-3 flex items-center justify-between">
+                      {match.status === "LIVE" ? (
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                          </span>
+                          LIVE
                         </span>
-                        LIVE
+                      ) : match.status === "SCHEDULED" ? (
+                        <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                          Upcoming
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-muted/10 px-2.5 py-0.5 text-xs font-semibold text-muted">
+                          Completed
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-xs text-muted">
+                        <Calendar className="h-3 w-3" />
+                        {formatDate(match.scheduledAt)}
                       </span>
-                    ) : match.status === "SCHEDULED" ? (
-                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                        Upcoming
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-muted/10 px-2.5 py-0.5 text-xs font-semibold text-muted">
-                        Completed
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1 text-xs text-muted">
-                      <Calendar className="h-3 w-3" />
-                      {formatDate(match.scheduledAt)}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-foreground">{match.homeTeam.shortName}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-foreground">{match.awayTeam.shortName}</span>
-                    </div>
-                  </div>
 
-                  <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
-                    <span className="flex items-center gap-1 text-xs text-muted">
-                      <MapPin className="h-3 w-3" />
-                      {match.venue}
-                    </span>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-foreground">{match.homeTeam.shortName}</span>
+                        <span className="text-xs text-muted">{homeScore}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-foreground">{match.awayTeam.shortName}</span>
+                        <span className="text-xs text-muted">{awayScore}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-xs text-muted">
+                        <MapPin className="h-3 w-3" />
+                        {match.venue}
+                      </span>
+                    </div>
+                  </Link>
+
+                  <div className="mt-3 border-t border-white/5 pt-3">
+                    <Link
+                      href={action.href}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-accent px-3 py-2 text-xs font-semibold text-white transition-all hover:brightness-110"
+                    >
+                      {action.label}
+                    </Link>
                   </div>
                 </div>
-              </Link>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </motion.div>
       )}
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { undoLastBall } from '@/lib/scoring'
+import { toUserError } from '@/lib/errors'
 
 export async function DELETE(
   request: NextRequest,
@@ -13,11 +14,10 @@ export async function DELETE(
     }
 
     const { matchId } = await params
-    const ball = await undoLastBall(matchId, user)
-    return NextResponse.json({ ball })
+    const result = await undoLastBall(matchId, user)
+    return NextResponse.json(result)
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const { message, status } = toUserError(error)
+    return NextResponse.json({ error: message }, { status })
   }
 }

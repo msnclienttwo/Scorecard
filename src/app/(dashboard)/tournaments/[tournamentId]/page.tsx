@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,6 +24,7 @@ import { SponsorGrid } from "@/components/tournament/SponsorGrid";
 import { GalleryGrid } from "@/components/tournament/GalleryGrid";
 import { TournamentCard } from "@/components/tournament/TournamentCard";
 import { MatchCard } from "@/components/match/MatchCard";
+import { TeamLogo } from "@/components/team/TeamLogo";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -50,6 +50,7 @@ export default function TournamentPage() {
       if (!res.ok) throw new Error("Tournament not found");
       return res.json();
     },
+    staleTime: 5 * 60_000,
   });
 
   const tabs = [
@@ -112,19 +113,14 @@ export default function TournamentPage() {
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
         <div className="relative flex flex-col md:flex-row items-start gap-6">
-          {tournament.logo ? (
-            <Image
-              src={tournament.logo}
-              alt={tournament.name}
-              width={80}
-              height={80}
-              className="w-20 h-20 rounded-2xl object-cover"
-            />
-          ) : (
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-2xl font-bold text-white">
-              <Trophy className="w-10 h-10" />
-            </div>
-          )}
+          <TeamLogo
+            src={tournament.logo}
+            name={tournament.name}
+            fallback={<Trophy className="w-10 h-10" />}
+            size={80}
+            rounded="rounded-2xl"
+            background="linear-gradient(135deg, #2563EB, #06B6D4)"
+          />
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-bold text-white">{tournament.name}</h1>

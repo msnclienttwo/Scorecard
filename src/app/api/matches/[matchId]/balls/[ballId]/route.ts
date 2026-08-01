@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { editBall, deleteBall, type BallInput } from '@/lib/scoring'
+import { toUserError } from '@/lib/errors'
 
 export async function PATCH(
   request: NextRequest,
@@ -34,12 +35,11 @@ export async function PATCH(
       patch.description = body.description
     }
 
-    const ball = await editBall(matchId, user, ballId, patch)
-    return NextResponse.json({ ball })
+    const result = await editBall(matchId, user, ballId, patch)
+    return NextResponse.json(result)
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const { message, status } = toUserError(error)
+    return NextResponse.json({ error: message }, { status })
   }
 }
 
@@ -54,11 +54,10 @@ export async function DELETE(
     }
 
     const { matchId, ballId } = await params
-    const ball = await deleteBall(matchId, user, ballId)
-    return NextResponse.json({ ball })
+    const result = await deleteBall(matchId, user, ballId)
+    return NextResponse.json(result)
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const { message, status } = toUserError(error)
+    return NextResponse.json({ error: message }, { status })
   }
 }

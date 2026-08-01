@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { use } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   BarChart3,
@@ -32,7 +33,7 @@ const TABS = [
   { label: "Ball-by-Ball", href: "ball-by-ball", icon: CircleDot },
   { label: "Commentary", href: "commentary", icon: MessageSquare },
   { label: "Statistics", href: "statistics", icon: BarChart3 },
-  { label: "Scoring", href: "score", icon: TrendingUp },
+  { label: "Scoring", href: "live", icon: TrendingUp },
 ];
 
 export default function MatchLayout({
@@ -44,25 +45,19 @@ export default function MatchLayout({
 }) {
   const { matchId } = use(params);
   const pathname = usePathname();
-  const [match, setMatch] = useState<MatchWithDetails | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchMatch() {
-      try {
-        const res = await fetch(`/api/matches/${matchId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setMatch(data.match);
-        }
-      } catch {
-        // silently fail, header will show placeholders
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchMatch();
-  }, [matchId]);
+  // Shares the ["match", matchId] query used by the Overview page (and the
+  // live pages via useMatchLive), so navigating into a match issues a single
+  // network request instead of the previous duplicate fetch.
+  const { data, isLoading } = useQuery({
+    queryKey: ["match", matchId],
+    queryFn: async () => {
+      const res = await fetch(`/api/matches/${matchId}`);
+      if (!res.ok) throw new Error("Match not found");
+      return res.json() as Promise<{ match: MatchWithDetails }>;
+    },
+  });
+  const match = data?.match;
 
   const currentTab =
     TABS.find((tab) => {
@@ -81,14 +76,14 @@ export default function MatchLayout({
 
   return (
     <div className="min-h-screen">
-      <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 sticky top-0 z-40">
+      <div className="bg-white/5 backdrop-blur-xl border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-6">
               <div className="text-center">
                 <p className="text-xs text-muted mb-1">Home</p>
                 <p className="text-lg font-bold text-white">
-                  {loading ? "---" : match?.homeTeam.shortName ?? "TBA"}
+                  {isLoading ? "---" : match?.homeTeam.shortName ?? "TBA"}
                 </p>
               </div>
               <div className="flex flex-col items-center">
@@ -103,7 +98,7 @@ export default function MatchLayout({
                     COMPLETED
                   </span>
                 )}
-                {!isLive && !isCompleted && !loading && (
+                {!isLive && !isCompleted && !isLoading && (
                   <span className="text-[10px] text-muted font-medium">
                     {match?.status ?? ""}
                   </span>
@@ -112,7 +107,7 @@ export default function MatchLayout({
               <div className="text-center">
                 <p className="text-xs text-muted mb-1">Away</p>
                 <p className="text-lg font-bold text-white">
-                  {loading ? "---" : match?.awayTeam.shortName ?? "TBA"}
+                  {isLoading ? "---" : match?.awayTeam.shortName ?? "TBA"}
                 </p>
               </div>
             </div>
@@ -134,7 +129,7 @@ export default function MatchLayout({
                   </div>
                 </>
               )}
-              {!loading && !currentInnings && (
+              {!isLoading && !currentInnings && (
                 <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
                   <p className="text-xs text-muted">Format</p>
                   <p className="text-white font-bold">

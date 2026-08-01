@@ -5,11 +5,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSocketStore } from "@/store/useSocketStore";
 
 const SOCKET_EVENTS = [
-  "ball:added",
-  "ball:updated",
-  "ball:deleted",
   "score:updated",
   "match:updated",
+  "innings:updated",
   "innings:started",
   "innings:ended",
   "strike:swapped",
@@ -28,10 +26,17 @@ export function useMatchLive(matchId: string) {
       if (!res.ok) throw new Error("Match not found");
       return res.json() as Promise<{ match: MatchDetail }>;
     },
-    refetchInterval: (query) =>
-      ["LIVE", "INNINGS_BREAK"].includes(query.state.data?.match?.status ?? "")
-        ? 5_000
-        : false,
+    // Socket delivery is the primary sync path: while connected we do not
+    // poll at all. Polling only remains as a fallback for when the socket is
+    // down, at a much slower cadence.
+    refetchInterval: isConnected
+      ? false
+      : (query) =>
+          ["LIVE", "INNINGS_BREAK"].includes(
+            query.state.data?.match?.status ?? ""
+          )
+            ? 15_000
+            : false,
     staleTime: 5_000,
   });
 
@@ -42,8 +47,12 @@ export function useMatchLive(matchId: string) {
       if (!res.ok) return { innings: [] as InningsDetail[] };
       return res.json() as Promise<{ innings: InningsDetail[] }>;
     },
-    refetchInterval: (query) =>
-      query.state.data?.innings?.some((i) => i.endedAt === null) ? 5_000 : false,
+    refetchInterval: isConnected
+      ? false
+      : (query) =>
+          query.state.data?.innings?.some((i) => i.endedAt === null)
+            ? 15_000
+            : false,
     staleTime: 5_000,
   });
 

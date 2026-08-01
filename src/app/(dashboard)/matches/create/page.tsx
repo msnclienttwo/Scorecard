@@ -22,10 +22,12 @@ import {
   Shield,
   MinusCircle,
   Search,
+  Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreateTeamModal } from "@/components/teams/CreateTeamModal";
 import { CreatePlayerModal } from "@/components/players/CreatePlayerModal";
+import CoinToss from "@/components/match/CoinToss";
 
 interface Team {
   id: string;
@@ -106,6 +108,9 @@ export default function CreateMatchPage() {
   const [users, setUsers] = useState<ScorerUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [scorerQuery, setScorerQuery] = useState("");
+
+  const [tossMode, setTossMode] = useState<"coin" | "manual">("coin");
+  const [tossSkipped, setTossSkipped] = useState(false);
 
   const [formData, setFormData] = useState<MatchFormData>({
     matchName: "",
@@ -867,7 +872,64 @@ export default function CreateMatchPage() {
                   <h2 className="text-xl font-semibold text-white mb-4">
                     Officials & Toss
                   </h2>
-                  <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="flex items-center gap-2 text-sm text-muted">
+                        <Coins className="w-4 h-4" />
+                        Toss (Optional)
+                      </label>
+                      {!tossSkipped && (
+                        <button
+                          type="button"
+                          onClick={() => setTossSkipped(true)}
+                          className="text-xs text-muted hover:text-white transition-colors"
+                        >
+                          Skip Toss
+                        </button>
+                      )}
+                    </div>
+
+                    {tossSkipped ? (
+                      <button
+                        type="button"
+                        onClick={() => setTossSkipped(false)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-4 rounded-2xl border border-dashed border-white/10 text-sm text-muted hover:text-white hover:border-white/20 transition-colors"
+                      >
+                        <Coins className="w-4 h-4" />
+                        {formData.tossWinner
+                          ? "Edit Toss"
+                          : "Add Toss (Optional)"}
+                      </button>
+                    ) : tossMode === "coin" ? (
+                      <CoinToss
+                        teamA={formData.teamA}
+                        teamB={formData.teamB}
+                        teamAName={teamName(formData.teamA)}
+                        teamBName={teamName(formData.teamB)}
+                        tossWinner={formData.tossWinner}
+                        tossDecision={formData.tossDecision}
+                        onAccept={(tossWinner, tossDecision) => {
+                          updateForm("tossWinner", tossWinner);
+                          updateForm("tossDecision", tossDecision);
+                        }}
+                        onUseManual={() => setTossMode("manual")}
+                        onSkip={() => setTossSkipped(true)}
+                      />
+                    ) : (
+                      <div className="space-y-6 bg-white/5 border border-white/10 rounded-2xl p-6">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-white">
+                            Manual Selection
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTossMode("coin")}
+                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                          >
+                            Back to Coin Toss
+                          </button>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm text-muted mb-2">
                         Toss Winner
@@ -919,6 +981,9 @@ export default function CreateMatchPage() {
                         ))}
                       </div>
                     </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm text-muted mb-2">

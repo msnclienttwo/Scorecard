@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -10,9 +11,19 @@ import {
   PlusCircle,
   ArrowRight,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useSocketStore } from "@/store/useSocketStore";
+
+interface InningsSummary {
+  id: string;
+  inningsNumber: number;
+  battingTeam: string;
+  totalRuns: number;
+  totalWickets: number;
+  totalOvers: number;
+}
 
 interface MatchData {
   id: string;
@@ -22,8 +33,10 @@ interface MatchData {
   scheduledAt: string;
   result: string | null;
   totalOvers: number;
-  homeTeam: { id: string; name: string; logo: string | null };
-  awayTeam: { id: string; name: string; logo: string | null };
+  homeTeam: { id: string; name: string; shortName: string; logo: string | null };
+  awayTeam: { id: string; name: string; shortName: string; logo: string | null };
+  innings: InningsSummary[];
+  scoringAccess: { allowed: boolean; reason?: string | null };
 }
 
 const container = {
@@ -49,6 +62,10 @@ async function fetchJson<T>(url: string): Promise<T> {
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
 
+  const queryClient = useQueryClient();
+  const { connect, subscribe, unsubscribe, on, off, isConnected } =
+    useSocketStore();
+
   const matchesQuery = useQuery({
     queryKey: ["dashboard", "matches-count"],
     queryFn: () => fetchJson<{ pagination?: { total?: number } }>("/api/matches?limit=1"),
@@ -56,8 +73,8 @@ export default function DashboardPage() {
 
   const liveQuery = useQuery({
     queryKey: ["dashboard", "live-matches"],
-    queryFn: () => fetchJson<{ matches?: MatchData[]; pagination?: { total?: number } }>("/api/matches?status=LIVE&limit=10"),
-    refetchInterval: 30_000,
+    queryFn: () => fetchJson<{ matches?: MatchData[]; pagination?: { total?: number } }>("/api/matches?status=LIVE&limit=100"),
+    refetchInterval: isConnected ? false : 30_000,
   });
 
   const recentQuery = useQuery({
@@ -83,6 +100,46 @@ export default function DashboardPage() {
   const recentMatches = recentQuery.data?.matches ?? [];
   const teamCount = teamsQuery.data?.pagination?.total ?? 0;
   const playerCount = playersQuery.data?.pagination?.total ?? 0;
+
+  const liveMatchIdsKey = liveMatches.map((m) => m.id).join(",");
+
+  // Socket delivery is the primary sync path for the live matches shown here;
+  // polling (above) is only a fallback while disconnected.
+  useEffect(() => {
+    connect();
+  }, [connect]);
+
+  useEffect(() => {
+    if (!isConnected || !liveMatchIdsKey) return;
+    const ids = liveMatchIdsKey.split(",");
+    ids.forEach((id) => subscribe(id));
+
+    const handler = () =>
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "live-matches"] });
+    const events = [
+      "score:updated",
+      "match:updated",
+      "innings:updated",
+      "innings:started",
+      "innings:ended",
+      "strike:swapped",
+      "commentary:added",
+    ];
+    events.forEach((event) => on(event, handler));
+
+    return () => {
+      ids.forEach((id) => unsubscribe(id));
+      events.forEach((event) => off(event, handler));
+    };
+  }, [
+    isConnected,
+    liveMatchIdsKey,
+    subscribe,
+    unsubscribe,
+    on,
+    off,
+    queryClient,
+  ]);
 
   const stats = [
     {
@@ -151,7 +208,7 @@ export default function DashboardPage() {
 
       <motion.div variants={item}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Live Matches</h2>
+          <h2 className="text-lg font-semibold text-foreground">Active Matches</h2>
           <Link href="/matches" className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary-light transition-colors">
             View all <ArrowRight className="h-4 w-4" />
           </Link>
@@ -173,33 +230,74 @@ export default function DashboardPage() {
           <div className="glass-card rounded-2xl p-8 text-center">
             <Radio className="mx-auto h-8 w-8 text-muted" />
             <p className="mt-3 text-sm font-medium text-foreground">No live matches right now</p>
-            <p className="text-xs text-muted">Check back later for live action</p>
+            <p className="text-xs text-muted">Live matches will appear here and can be resumed anytime</p>
           </div>
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
-            {liveMatches.map((match) => (
-              <div key={match.id} className="glass-card min-w-[320px] flex-shrink-0 rounded-2xl p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            {liveMatches.map((match) => {
+              const latestInnings =
+                match.innings && match.innings.length > 0
+                  ? match.innings[match.innings.length - 1]
+                  : null;
+              const canScore = match.scoringAccess?.allowed ?? false;
+              return (
+                <div key={match.id} className="glass-card flex min-w-[320px] flex-shrink-0 flex-col rounded-2xl p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                      </span>
+                      LIVE
                     </span>
-                    LIVE
-                  </span>
-                  <span className="text-xs text-muted">{match.totalOvers} overs</span>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">{match.homeTeam.name}</span>
+                    <span className="text-xs text-muted">{match.totalOvers} overs</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">{match.awayTeam.name}</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">
+                        {match.homeTeam.shortName || match.homeTeam.name}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {latestInnings?.battingTeam === match.homeTeam.id
+                          ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                          : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">
+                        {match.awayTeam.shortName || match.awayTeam.name}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {latestInnings?.battingTeam === match.awayTeam.id
+                          ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                          : ""}
+                      </span>
+                    </div>
                   </div>
+                  {!latestInnings && (
+                    <p className="mt-2 text-xs text-muted">Match is live but scoring has not started</p>
+                  )}
+                  <div className="mt-4 border-t border-white/5 pt-3">
+                    {canScore ? (
+                      <Link
+                        href={`/matches/${match.id}/live`}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-accent px-3 py-2 text-xs font-semibold text-white transition-all hover:brightness-110"
+                      >
+                        Continue Scoring
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/score/${match.id}`}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-white/10"
+                      >
+                        View Live
+                      </Link>
+                    )}
+                  </div>
+                  {match.venue && <p className="mt-3 text-xs text-muted">{match.venue}</p>}
                 </div>
-                {match.venue && <p className="mt-3 text-xs text-muted">{match.venue}</p>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </motion.div>

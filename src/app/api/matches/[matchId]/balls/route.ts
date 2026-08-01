@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { recordBall, type BallInput } from '@/lib/scoring'
+import { toUserError } from '@/lib/errors'
 
 export async function POST(
   request: NextRequest,
@@ -43,8 +44,7 @@ export async function POST(
     const result = await recordBall(matchId, user, input)
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const { message, status } = toUserError(error)
+    return NextResponse.json({ error: message }, { status })
   }
 }

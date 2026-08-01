@@ -45,6 +45,7 @@ export default function PlayerProfilePage() {
       if (!res.ok) throw new Error("Player not found");
       return res.json();
     },
+    staleTime: 5 * 60_000,
   });
 
   if (isLoading) {

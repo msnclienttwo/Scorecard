@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { TeamLogo } from "@/components/team/TeamLogo";
 
 interface TeamCardProps {
   id: string;
@@ -16,6 +17,7 @@ export default function TeamCard({
   id,
   name,
   city,
+  logo,
   playerCount,
   wins,
   losses,
@@ -30,11 +32,14 @@ export default function TeamCard({
 
       <div className="relative z-10">
         <div className="flex items-center gap-4 mb-4">
-          <div className="w-14 h-14 rounded-full bg-[#2563EB]/20 border border-[#2563EB]/30 flex items-center justify-center">
-            <span className="text-xl font-bold text-[#2563EB]">
-              {name.substring(0, 2).toUpperCase()}
-            </span>
-          </div>
+          <TeamLogo
+            src={logo}
+            name={name}
+            fallback={name.substring(0, 2).toUpperCase()}
+            size={56}
+            rounded="rounded-full"
+            background="linear-gradient(135deg, #2563EB, #00D4FF)"
+          />
           <div>
             <h3 className="font-semibold text-white">{name}</h3>
             <p className="text-sm text-white/50">{city}</p>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isDirectImageUrl, LOGO_VALIDATION_MESSAGE } from "@/lib/logo";
 
 export const registerSchema = z
   .object({
@@ -89,7 +90,12 @@ export const createTournamentSchema = z
     shortName: z.string().max(50).optional(),
     description: z.string().max(1000).optional(),
     format: z.enum(["T20", "ODI", "TEST", "T10", "CUSTOM"]),
-    logo: z.string().url().optional().nullable(),
+  logo: z
+    .string()
+    .url()
+    .refine((v) => isDirectImageUrl(v), { message: LOGO_VALIDATION_MESSAGE })
+    .optional()
+    .nullable(),
     banner: z.string().url().optional().nullable(),
     startDate: z.string().datetime(),
     endDate: z.string().datetime(),
