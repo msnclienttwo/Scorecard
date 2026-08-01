@@ -39,6 +39,11 @@ export async function POST(
       dismissedPlayerId: body.dismissedPlayerId ?? null,
       fielderId: body.fielderId ?? null,
       description: body.description ?? null,
+      shotType: body.shotType ?? null,
+      placementZone: body.placementZone ?? null,
+      fieldPositions: body.fieldPositions ?? null,
+      isFreeHit: typeof body.isFreeHit === 'boolean' ? body.isFreeHit : undefined,
+      isOverthrow: typeof body.isOverthrow === 'boolean' ? body.isOverthrow : false,
     }
 
     const result = await recordBall(matchId, user, input)

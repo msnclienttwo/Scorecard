@@ -34,6 +34,15 @@ export async function PATCH(
     if (typeof body.description === 'string') {
       patch.description = body.description
     }
+    if ('shotType' in body) patch.shotType = body.shotType ?? null
+    if ('placementZone' in body) patch.placementZone = body.placementZone ?? null
+    if ('fieldPositions' in body) {
+      patch.fieldPositions = body.fieldPositions ?? null
+    }
+    if (typeof body.isFreeHit === 'boolean') patch.isFreeHit = body.isFreeHit
+    if (typeof body.isOverthrow === 'boolean') {
+      patch.isOverthrow = body.isOverthrow
+    }
 
     const result = await editBall(matchId, user, ballId, patch)
     return NextResponse.json(result)

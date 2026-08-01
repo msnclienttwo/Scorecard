@@ -28,6 +28,8 @@ import { ThisOverStrip } from "@/components/scoring/ThisOverStrip";
 import { PartnershipPanel } from "@/components/scoring/PartnershipPanel";
 import { ScoringPad } from "@/components/scoring/ScoringPad";
 import { QuickActionBar } from "@/components/scoring/QuickActionBar";
+import { AdvancedScoringPanel } from "@/components/scoring/AdvancedScoringPanel";
+import type { WicketTypeValue } from "@/components/scoring/scoreUtils";
 import { SetUpInningsModal } from "@/components/scoring/SetUpInningsModal";
 import { DismissalModal } from "@/components/scoring/DismissalModal";
 import { NextBatterModal } from "@/components/scoring/NextBatterModal";
@@ -37,6 +39,12 @@ import { EditLastBallModal } from "@/components/scoring/EditLastBallModal";
 import { ConfirmModal } from "@/components/scoring/ConfirmModal";
 import { ShortcutsHelpModal } from "@/components/scoring/ShortcutsHelpModal";
 import { formatStoredOvers } from "@/lib/utils";
+import {
+  advancedToBallInput,
+  EMPTY_ADVANCED,
+  getBattingHand,
+  type AdvancedBallMeta,
+} from "@/lib/advancedScoring";
 
 interface ConfirmState {
   title: string;
@@ -71,6 +79,7 @@ export default function LiveScoringPage() {
     needsNextBowler,
     thisOver,
     lastBall,
+    nextBallIsFreeHit,
     partnership,
     dismissedPlayerIds,
     crr,
@@ -104,6 +113,11 @@ export default function LiveScoringPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [deferBowler, setDeferBowler] = useState(false);
+  const [advancedMode, setAdvancedMode] = useState(false);
+  const [pendingAdvanced, setPendingAdvanced] =
+    useState<AdvancedBallMeta>(EMPTY_ADVANCED);
+  const [dismissalWicketType, setDismissalWicketType] =
+    useState<WicketTypeValue | null>(null);
 
   // Compact floating score bar: shown only while the full scoreboard is
   // scrolled out of view, hidden again as soon as it comes back into view.
@@ -182,20 +196,58 @@ export default function LiveScoringPage() {
     showShortcuts;
 
   // ---- actions -------------------------------------------------------------
+  const clearPendingAdvanced = useCallback(() => {
+    setPendingAdvanced(EMPTY_ADVANCED);
+  }, []);
+
   const onRuns = useCallback(
-    (runs: number) => {
-      void recordBall({ runs });
+    async (runs: number) => {
+      const ok = await recordBall({
+        runs,
+        ...advancedToBallInput(pendingAdvanced),
+      });
+      if (ok) clearPendingAdvanced();
     },
-    [recordBall]
+    [recordBall, pendingAdvanced, clearPendingAdvanced]
+  );
+
+  const onExtrasConfirm = useCallback(
+    async (kind: ExtraKind, runs: number) => {
+      const ok = await handleExtras(
+        kind,
+        runs,
+        advancedToBallInput(pendingAdvanced)
+      );
+      if (ok) clearPendingAdvanced();
+    },
+    [handleExtras, pendingAdvanced, clearPendingAdvanced]
   );
 
   const onWicketConfirm = useCallback(
     async (input: WicketConfirmInput) => {
       setShowDismissal(false);
-      await handleWicketConfirm(input);
+      const ok = await handleWicketConfirm(
+        input,
+        advancedToBallInput(pendingAdvanced)
+      );
+      if (ok) clearPendingAdvanced();
     },
-    [handleWicketConfirm]
+    [handleWicketConfirm, pendingAdvanced, clearPendingAdvanced]
   );
+
+  const openDismissal = useCallback(
+    (preset: WicketTypeValue | null) => {
+      if (!currentInnings?.strikerId || !currentInnings.nonStrikerId) return;
+      setDismissalWicketType(preset);
+      setShowDismissal(true);
+    },
+    [currentInnings]
+  );
+
+  const closeDismissal = useCallback(() => {
+    setShowDismissal(false);
+    setDismissalWicketType(null);
+  }, []);
 
   const onNextBatter = useCallback(
     async (id: string) => {
@@ -345,7 +397,7 @@ export default function LiveScoringPage() {
       const key = e.key;
       if (key >= "0" && key <= "6") {
         e.preventDefault();
-        void recordBall({ runs: Number(key) });
+        void onRuns(Number(key));
         return;
       }
       const lower = key.toLowerCase();
@@ -368,9 +420,7 @@ export default function LiveScoringPage() {
           break;
         case "k":
           e.preventDefault();
-          if (currentInnings?.strikerId && currentInnings.nonStrikerId) {
-            setShowDismissal(true);
-          }
+          openDismissal(null);
           break;
         case "u":
         case "z":
@@ -400,7 +450,8 @@ export default function LiveScoringPage() {
     currentInnings,
     striker,
     nonStriker,
-    recordBall,
+    onRuns,
+    openDismissal,
     onUndo,
     swapStrike,
     onTogglePause,
@@ -586,14 +637,53 @@ export default function LiveScoringPage() {
               onFinish={onFinish}
               onHelp={() => setShowShortcuts(true)}
             />
+            {showConsole && (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex rounded-xl border border-white/10 bg-white/5 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedMode(false)}
+                    className={
+                      !advancedMode
+                        ? "rounded-lg bg-accent/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-accent"
+                        : "rounded-lg px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted hover:text-white"
+                    }
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedMode(true)}
+                    className={
+                      advancedMode
+                        ? "rounded-lg bg-primary/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-primary"
+                        : "rounded-lg px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted hover:text-white"
+                    }
+                  >
+                    Advanced
+                  </button>
+                </div>
+                {nextBallIsFreeHit && (
+                  <span className="rounded-full bg-accent/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-accent">
+                    Free hit next ball
+                  </span>
+                )}
+              </div>
+            )}
+            {showConsole && advancedMode && (
+              <AdvancedScoringPanel
+                battingHand={getBattingHand(striker)}
+                freeHit={nextBallIsFreeHit}
+                submitting={submitting}
+                meta={pendingAdvanced}
+                onChange={setPendingAdvanced}
+                onRunOut={() => openDismissal("RUN_OUT")}
+              />
+            )}
             <ScoringPad
               submitting={submitting}
               onRuns={onRuns}
-              onWicket={() => {
-                if (currentInnings?.strikerId && currentInnings.nonStrikerId) {
-                  setShowDismissal(true);
-                }
-              }}
+              onWicket={() => openDismissal(null)}
               onExtras={(kind) => setExtrasKind(kind)}
             />
           </div>
@@ -621,7 +711,7 @@ export default function LiveScoringPage() {
 
       <DismissalModal
         isOpen={showDismissal}
-        onClose={() => setShowDismissal(false)}
+        onClose={closeDismissal}
         battingPlayers={battingTeamPlayers}
         bowlingPlayers={bowlingTeamPlayers}
         dismissed={
@@ -632,6 +722,7 @@ export default function LiveScoringPage() {
               }
             : null
         }
+        initialWicketType={dismissalWicketType}
         submitting={submitting}
         onConfirm={(input) => void onWicketConfirm(input)}
       />
@@ -674,7 +765,7 @@ export default function LiveScoringPage() {
         onConfirm={(runs) => {
           const kind = extrasKind;
           setExtrasKind(null);
-          if (kind) void handleExtras(kind, runs);
+          if (kind) void onExtrasConfirm(kind, runs);
         }}
       />
 

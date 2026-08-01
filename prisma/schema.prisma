@@ -467,6 +467,11 @@ model Ball {
   fielderId    String?
   description  String?
   ballResult   BallResult
+  shotType     String?
+  placementZone String?
+  fieldPositions String?
+  isFreeHit    Boolean   @default(false)
+  isOverthrow  Boolean   @default(false)
   recordedById String?
   updatedById  String?
   createdAt    DateTime  @default(now())

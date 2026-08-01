@@ -108,6 +108,7 @@ export interface PlayerRef {
   name: string;
   shortName?: string | null;
   role?: string | null;
+  battingStyle?: string | null;
 }
 
 export interface TeamRef {
@@ -171,6 +172,11 @@ export interface BallRef {
   fielderId?: string | null;
   ballResult?: string;
   description?: string | null;
+  shotType?: string | null;
+  placementZone?: string | null;
+  fieldPositions?: string | null;
+  isFreeHit?: boolean;
+  isOverthrow?: boolean;
   createdAt?: string;
   over?: { id: string; overNumber: number } | null;
 }

@@ -6,6 +6,13 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { EXTRA_TYPES, WICKET_TYPES } from "./scoreUtils";
+import {
+  SHOTS,
+  ZONES,
+  parseFieldPositions,
+  type ShotType,
+  type PlacementZone,
+} from "@/lib/advancedScoring";
 import type { BallRef, PlayerRef } from "@/hooks/useMatchLive";
 import type { EditBallPatch, ExtraKind } from "@/hooks/useLiveScoring";
 
@@ -40,6 +47,9 @@ export function EditLastBallModal({
   const [wicketType, setWicketType] = useState<string>("");
   const [dismissedId, setDismissedId] = useState<string>("");
   const [fielderId, setFielderId] = useState<string>("");
+  const [shotType, setShotType] = useState<string>("");
+  const [placementZone, setPlacementZone] = useState<string>("");
+  const [isOverthrow, setIsOverthrow] = useState(false);
 
   useEffect(() => {
     if (isOpen && ball) {
@@ -50,6 +60,9 @@ export function EditLastBallModal({
       setWicketType(ball.wicketType ?? "");
       setDismissedId(ball.dismissedPlayerId ?? "");
       setFielderId(ball.fielderId ?? "");
+      setShotType(ball.shotType ?? "");
+      setPlacementZone(ball.placementZone ?? "");
+      setIsOverthrow(!!ball.isOverthrow);
     }
   }, [isOpen, ball]);
 
@@ -63,6 +76,11 @@ export function EditLastBallModal({
       wicketType: isWicket ? wicketType || null : null,
       dismissedPlayerId: isWicket ? dismissedId || null : null,
       fielderId: isWicket && fielderId ? fielderId : null,
+      shotType: shotType ? (shotType as ShotType) : null,
+      placementZone: placementZone
+        ? (placementZone as PlacementZone)
+        : null,
+      isOverthrow,
     });
   };
 
@@ -203,6 +221,84 @@ export function EditLastBallModal({
             </div>
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-3 rounded-xl border border-primary/20 bg-primary/[0.03] p-3">
+          <div>
+            <label className="mb-1.5 block text-xs text-muted">Shot</label>
+            <select
+              value={shotType}
+              onChange={(e) => setShotType(e.target.value)}
+              className={cn(inputClass, "appearance-none")}
+            >
+              <option value="" className="bg-background">
+                None
+              </option>
+              {SHOTS.map((s) => (
+                <option key={s.code} value={s.code} className="bg-background">
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs text-muted">
+              Placement
+            </label>
+            <select
+              value={placementZone}
+              onChange={(e) => setPlacementZone(e.target.value)}
+              className={cn(inputClass, "appearance-none")}
+            >
+              <option value="" className="bg-background">
+                None
+              </option>
+              {ZONES.map((z) => (
+                <option key={z.code} value={z.code} className="bg-background">
+                  {z.label}
+                  {z.ring === "BOUNDARY" ? " (boundary)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5">
+            <span className="text-sm text-white">
+              Overthrow{isOverthrow ? " recorded" : ""}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isOverthrow}
+              onClick={() => setIsOverthrow((v) => !v)}
+              className={cn(
+                "relative h-6 w-11 rounded-full transition-colors",
+                isOverthrow ? "bg-warning" : "bg-white/15"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all",
+                  isOverthrow ? "left-[22px]" : "left-0.5"
+                )}
+              />
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {ball?.isFreeHit && (
+              <span className="rounded-full bg-accent/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
+                Free hit
+              </span>
+            )}
+            {!!ball?.fieldPositions && (
+              <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[10px] text-muted">
+                Field: {parseFieldPositions(ball.fieldPositions).length}{" "}
+                positions
+              </span>
+            )}
+          </div>
+        </div>
 
         <div className="flex items-center justify-between pt-1">
           <Button

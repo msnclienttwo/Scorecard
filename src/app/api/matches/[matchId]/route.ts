@@ -22,18 +22,34 @@ export async function GET(
         },
         squads: {
           include: {
-            player: { select: { id: true, name: true, shortName: true, role: true } },
-            team: { select: { id: true, name: true, shortName: true } }
+            player: {
+              select: {
+                id: true,
+                name: true,
+                shortName: true,
+                role: true,
+                battingStyle: true,
+              },
+            },
+            team: { select: { id: true, name: true, shortName: true } },
           }
         },
         innings: {
           include: {
             battingCard: {
-              include: { player: { select: { id: true, name: true } } },
+              include: {
+                player: {
+                  select: { id: true, name: true, battingStyle: true },
+                },
+              },
               orderBy: { batPosition: 'asc' }
             },
             bowlingCard: {
-              include: { player: { select: { id: true, name: true } } },
+              include: {
+                player: {
+                  select: { id: true, name: true, battingStyle: true },
+                },
+              },
               orderBy: { overs: 'desc' }
             },
             fallOfWickets: { orderBy: { wicketNumber: 'asc' } },

@@ -20,6 +20,10 @@ export interface BallOutcomeInput {
   wicketType?: string | null;
   dismissedPlayerId?: string | null;
   fielderId?: string | null;
+  shotType?: string | null;
+  placementZone?: string | null;
+  fieldPositions?: string | null;
+  isOverthrow?: boolean;
 }
 
 export interface EditBallPatch {
@@ -30,6 +34,11 @@ export interface EditBallPatch {
   wicketType?: string | null;
   dismissedPlayerId?: string | null;
   fielderId?: string | null;
+  shotType?: string | null;
+  placementZone?: string | null;
+  fieldPositions?: string | null;
+  isFreeHit?: boolean;
+  isOverthrow?: boolean;
 }
 
 export interface WicketConfirmInput {
@@ -224,6 +233,9 @@ export function useLiveScoring(matchId: string) {
     allBallsThisInnings.length > 0
       ? allBallsThisInnings[allBallsThisInnings.length - 1]
       : null;
+
+  // The delivery after a no-ball is a free hit (persisted server-side too).
+  const nextBallIsFreeHit = lastBall?.extraType === "NO_BALL";
 
   const partnership = useMemo(() => {
     if (!currentInnings) return { runs: 0, balls: 0 };
@@ -420,6 +432,10 @@ export function useLiveScoring(matchId: string) {
             wicketType: input.wicketType ?? null,
             dismissedPlayerId: input.dismissedPlayerId ?? null,
             fielderId: input.fielderId ?? null,
+            shotType: input.shotType ?? null,
+            placementZone: input.placementZone ?? null,
+            fieldPositions: input.fieldPositions ?? null,
+            isOverthrow: input.isOverthrow ?? false,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -441,17 +457,34 @@ export function useLiveScoring(matchId: string) {
   );
 
   const handleExtras = useCallback(
-    (kind: ExtraKind, runs: number): Promise<boolean> => {
-      if (kind === "WIDE") return recordBall({ runs: 0, extraType: "WIDE", extraRuns: runs });
-      if (kind === "NO_BALL") return recordBall({ runs, extraType: "NO_BALL", extraRuns: 1 + runs });
-      if (kind === "BYE") return recordBall({ runs: 0, extraType: "BYE", extraRuns: runs });
-      return recordBall({ runs: 0, extraType: "LEG_BYE", extraRuns: runs });
+    (
+      kind: ExtraKind,
+      runs: number,
+      advanced?: Pick<
+        BallOutcomeInput,
+        "shotType" | "placementZone" | "fieldPositions" | "isOverthrow"
+      >
+    ): Promise<boolean> => {
+      const extra = advanced ?? {};
+      if (kind === "WIDE")
+        return recordBall({ runs: 0, extraType: "WIDE", extraRuns: runs, ...extra });
+      if (kind === "NO_BALL")
+        return recordBall({ runs, extraType: "NO_BALL", extraRuns: 1 + runs, ...extra });
+      if (kind === "BYE")
+        return recordBall({ runs: 0, extraType: "BYE", extraRuns: runs, ...extra });
+      return recordBall({ runs: 0, extraType: "LEG_BYE", extraRuns: runs, ...extra });
     },
     [recordBall]
   );
 
   const handleWicketConfirm = useCallback(
-    async (input: WicketConfirmInput): Promise<boolean> => {
+    async (
+      input: WicketConfirmInput,
+      advanced?: Pick<
+        BallOutcomeInput,
+        "shotType" | "placementZone" | "fieldPositions" | "isOverthrow"
+      >
+    ): Promise<boolean> => {
       const preStriker = currentInnings?.strikerId;
       const preNonStriker = currentInnings?.nonStrikerId;
       if (!preStriker || !preNonStriker || !currentInnings) return false;
@@ -471,6 +504,7 @@ export function useLiveScoring(matchId: string) {
         wicketType: input.wicketType,
         dismissedPlayerId: input.dismissedPlayerId,
         fielderId: input.fielderId,
+        ...(advanced ?? {}),
       });
     },
     [currentInnings, legalBalls, recordBall]
@@ -744,6 +778,7 @@ export function useLiveScoring(matchId: string) {
     thisOver,
     allBallsThisInnings,
     lastBall,
+    nextBallIsFreeHit,
     partnership,
     dismissedPlayerIds,
     crr,

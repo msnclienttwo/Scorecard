@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import type { BallRef, OverRef } from "@/hooks/useMatchLive";
 import { formatBallSummary, getBallColor, getBallDisplay } from "./scoreUtils";
+import { shotLabel, zoneLabel } from "@/lib/advancedScoring";
 
 interface ThisOverStripProps {
   over: OverRef | null;
@@ -12,6 +13,12 @@ interface ThisOverStripProps {
 export function ThisOverStrip({ over, lastBall }: ThisOverStripProps) {
   const balls = over?.balls ?? [];
   const overNumber = over?.overNumber;
+  const lastBallNote =
+    lastBall && (lastBall.shotType || lastBall.placementZone)
+      ? ` · ${[shotLabel(lastBall.shotType), zoneLabel(lastBall.placementZone)]
+          .filter(Boolean)
+          .join(" to ")}${lastBall.isOverthrow ? " + overthrow" : ""}`
+      : "";
 
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -22,6 +29,7 @@ export function ThisOverStrip({ over, lastBall }: ThisOverStripProps) {
         {lastBall && (
           <span className="truncate text-[11px] text-muted">
             Last ball: {formatBallSummary(lastBall)}
+            {lastBallNote}
           </span>
         )}
       </div>
@@ -32,6 +40,9 @@ export function ThisOverStrip({ over, lastBall }: ThisOverStripProps) {
         {balls.map((b) => (
           <span
             key={b.id}
+            title={[shotLabel(b.shotType), zoneLabel(b.placementZone)]
+              .filter(Boolean)
+              .join(" · ") || undefined}
             className={cn(
               "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold",
               getBallColor(b)

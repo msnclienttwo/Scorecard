@@ -539,6 +539,11 @@ export interface BallInput {
   dismissedPlayerId?: string | null;
   fielderId?: string | null;
   description?: string | null;
+  shotType?: string | null;
+  placementZone?: string | null;
+  fieldPositions?: string | null;
+  isFreeHit?: boolean;
+  isOverthrow?: boolean;
 }
 
 async function assertPlayersInTeam(
@@ -707,6 +712,14 @@ export async function recordBall(
     throw new Error("All wickets are down for this innings.");
   }
 
+  // A delivery bowled immediately after a no-ball is a free hit.
+  const previousBall = await prisma.ball.findFirst({
+    where: { inningsId: innings.id },
+    orderBy: { ballNumber: "desc" },
+    select: { extraType: true },
+  });
+  const isFreeHit = input.isFreeHit ?? previousBall?.extraType === "NO_BALL";
+
   const result = await prisma.$transaction(async (tx) => {
     await validateBallPlayers(tx, match, innings, input);
 
@@ -731,6 +744,11 @@ export async function recordBall(
         fielderId: input.fielderId ?? null,
         description: input.description ?? null,
         ballResult: mapBallResult(runs, extraType),
+        shotType: input.shotType ?? null,
+        placementZone: input.placementZone ?? null,
+        fieldPositions: input.fieldPositions ?? null,
+        isFreeHit,
+        isOverthrow: input.isOverthrow ?? false,
         recordedById: user.sub,
       },
     });
@@ -870,6 +888,21 @@ export async function editBall(
         fielderId: patch.fielderId === undefined ? existing.fielderId : patch.fielderId,
         description: patch.description === undefined ? existing.description : patch.description,
         ballResult: mapBallResult(runs, extraType),
+        shotType: patch.shotType === undefined ? existing.shotType : patch.shotType,
+        placementZone:
+          patch.placementZone === undefined
+            ? existing.placementZone
+            : patch.placementZone,
+        fieldPositions:
+          patch.fieldPositions === undefined
+            ? existing.fieldPositions
+            : patch.fieldPositions,
+        isFreeHit:
+          patch.isFreeHit === undefined ? existing.isFreeHit : patch.isFreeHit,
+        isOverthrow:
+          patch.isOverthrow === undefined
+            ? existing.isOverthrow
+            : patch.isOverthrow,
         updatedById: user.sub,
       },
     });

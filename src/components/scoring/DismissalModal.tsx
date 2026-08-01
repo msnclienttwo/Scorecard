@@ -17,6 +17,7 @@ interface DismissalModalProps {
   battingPlayers: PlayerRef[];
   bowlingPlayers: PlayerRef[];
   dismissed: { strikerId: string; nonStrikerId: string } | null;
+  initialWicketType?: WicketTypeValue | null;
   submitting: boolean;
   onConfirm: (input: WicketConfirmInput) => void;
 }
@@ -27,6 +28,7 @@ export function DismissalModal({
   battingPlayers,
   bowlingPlayers,
   dismissed,
+  initialWicketType,
   submitting,
   onConfirm,
 }: DismissalModalProps) {
@@ -38,13 +40,16 @@ export function DismissalModal({
 
   useEffect(() => {
     if (isOpen) {
-      setStep("type");
-      setWicketType(null);
-      setDismissedId(null);
+      const preset = initialWicketType ?? null;
+      setWicketType(preset);
+      setDismissedId(preset ? dismissed?.strikerId ?? null : null);
       setFielderId(null);
       setRunsCompleted(0);
+      if (preset === "RUN_OUT") setStep("dismissed");
+      else if (preset === "CAUGHT" || preset === "STUMPED") setStep("fielder");
+      else setStep("type");
     }
-  }, [isOpen]);
+  }, [isOpen, initialWicketType, dismissed]);
 
   const needsFielder =
     wicketType === "CAUGHT" ||

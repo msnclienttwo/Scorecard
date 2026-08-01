@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn, formatStoredOvers, parseOversToBalls, calculateRunRate } from "@/lib/utils";
 import { isLegalDelivery } from "@/lib/scoring";
+import { shotLabel, zoneLabel } from "@/lib/advancedScoring";
 import { useSocketStore } from "@/store/useSocketStore";
 import type { Match, Innings, Over, Ball, BattingScorecard, BowlingScorecard } from "@/types";
 
@@ -113,6 +114,16 @@ function buildCommentary(
       } else {
         text = `${ball.runs} run${ball.runs > 1 ? "s" : ""}.`;
       }
+
+      const advancedNote = [
+        ball.shotType ? shotLabel(ball.shotType) : null,
+        ball.placementZone ? zoneLabel(ball.placementZone) : null,
+      ]
+        .filter(Boolean)
+        .join(" to ");
+      if (advancedNote) text += ` ${advancedNote}.`;
+      if (ball.isOverthrow) text += " (overthrow)";
+      if (ball.isFreeHit) text += " (free hit)";
 
       entries.push({
         id: ball.id,
