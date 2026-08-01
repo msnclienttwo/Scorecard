@@ -122,28 +122,27 @@ export default function LandingPage() {
   return (
     <div className="bg-[#070B14] min-h-screen overflow-hidden">
       <section className="relative min-h-screen flex items-center justify-center px-4 pt-20">
+        <link
+          rel="preload"
+          as="image"
+          href="/Crickbolt.png"
+          fetchPriority="high"
+        />
         <div className="absolute inset-0 overflow-hidden">
-          <motion.div
-            animate={{
-              x: [0, 30, 0],
-              y: [0, -20, 0],
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: "url('/Crickbolt.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
             }}
-            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-[128px]"
-          />
-          <motion.div
-            animate={{
-              x: [0, -20, 0],
-              y: [0, 30, 0],
-            }}
-            transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/15 rounded-full blur-[128px]"
           />
           <div
-            className="absolute inset-0 opacity-[0.03]"
+            className="absolute inset-0"
             style={{
-              backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
-              backgroundSize: "60px 60px",
+              background:
+                "linear-gradient(to top, #070B14 0%, rgba(7,11,20,0.35) 30%, rgba(7,11,20,0) 55%), linear-gradient(to right, rgba(7,11,20,0.92) 0%, rgba(7,11,20,0.72) 40%, rgba(7,11,20,0.42) 70%, rgba(7,11,20,0.3) 100%)",
             }}
           />
         </div>
