@@ -36,6 +36,7 @@ import { ExtrasRunsModal } from "@/components/scoring/ExtrasRunsModal";
 import { EditLastBallModal } from "@/components/scoring/EditLastBallModal";
 import { ConfirmModal } from "@/components/scoring/ConfirmModal";
 import { ShortcutsHelpModal } from "@/components/scoring/ShortcutsHelpModal";
+import { formatStoredOvers } from "@/lib/utils";
 
 interface ConfirmState {
   title: string;
@@ -749,7 +750,7 @@ function BreakCard({
       {innings && (
         <p className="mt-2 text-sm text-muted">
           Innings {innings.inningsNumber} ended at {innings.totalRuns}/
-          {innings.totalWickets} in {innings.totalOvers} overs
+          {innings.totalWickets} in {formatStoredOvers(innings.totalOvers)} overs
         </p>
       )}
       <Button size="lg" className="mt-6" onClick={onStart}>

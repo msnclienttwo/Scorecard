@@ -36,6 +36,22 @@ export function formatOvers(balls: number): string {
   return `${overs}.${remaining}`;
 }
 
+/**
+ * Formats a stored overs value into cricket notation ("3.2"). Stored values
+ * are cricket-notation floats (e.g. `2.3` = 2 overs + 3 balls). Legacy rows
+ * written as `balls / 6` (e.g. `0.3333333333333333`) are also handled.
+ */
+export function formatStoredOvers(overs: number): string {
+  if (!Number.isFinite(overs) || overs <= 0) return "0";
+  const full = Math.floor(overs + 1e-9);
+  const tenths = (overs - full) * 10;
+  const isCricketNotation = Math.abs(tenths - Math.round(tenths)) < 1e-6;
+  const balls = isCricketNotation
+    ? full * 6 + Math.round(tenths)
+    : Math.round(overs * 6);
+  return formatOvers(balls);
+}
+
 export function calculateStrikeRate(runs: number, balls: number): number {
   if (balls === 0) return 0;
   return (runs / balls) * 100;

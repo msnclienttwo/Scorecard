@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
+import { cn, formatStoredOvers, parseOversToBalls } from "@/lib/utils";
 import { AlertCircle, Loader2 } from "lucide-react";
 
 interface Player {
@@ -204,8 +204,8 @@ export default function ScorecardPage() {
           </p>
         </div>
         <p className="text-sm text-muted">
-          Overs: {current.totalOvers} &middot; Extras: {current.extras} &middot;
-          RR: {current.totalOvers > 0 ? (current.totalRuns / current.totalOvers).toFixed(2) : "0.00"}
+          Overs: {formatStoredOvers(current.totalOvers)} &middot; Extras: {current.extras} &middot;
+          RR: {(parseOversToBalls(current.totalOvers) / 6) > 0 ? (current.totalRuns / (parseOversToBalls(current.totalOvers) / 6)).toFixed(2) : "0.00"}
         </p>
       </motion.div>
 
@@ -260,7 +260,7 @@ export default function ScorecardPage() {
               {[...current.bowlingCard].sort((a, b) => b.wickets - a.wickets).map((b) => (
                 <tr key={b.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-3"><span className="text-white font-medium">{b.player.name}</span></td>
-                  <td className="px-4 py-3 text-right text-muted">{b.overs}</td>
+                  <td className="px-4 py-3 text-right text-muted">{formatStoredOvers(b.overs)}</td>
                   <td className="px-4 py-3 text-right text-muted">{b.maidens}</td>
                   <td className="px-4 py-3 text-right text-white">{b.runs}</td>
                   <td className="px-4 py-3 text-right text-danger font-semibold">{b.wickets}</td>
@@ -288,7 +288,7 @@ export default function ScorecardPage() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm text-white">{fow.batterName || "Batsman"}</p>
-                    <p className="text-xs text-muted">Score: {fow.runs}/{fow.wicketNumber} &middot; Over: {fow.overs}</p>
+                    <p className="text-xs text-muted">Score: {fow.runs}/{fow.wicketNumber} &middot; Over: {formatStoredOvers(fow.overs)}</p>
                   </div>
                 </div>
               ))

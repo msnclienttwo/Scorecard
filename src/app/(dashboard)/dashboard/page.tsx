@@ -12,7 +12,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
+import { cn, formatStoredOvers } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useSocketStore } from "@/store/useSocketStore";
 
@@ -259,7 +259,7 @@ export default function DashboardPage() {
                       </span>
                       <span className="text-xs text-muted">
                         {latestInnings?.battingTeam === match.homeTeam.id
-                          ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                          ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${formatStoredOvers(latestInnings.totalOvers)})`
                           : ""}
                       </span>
                     </div>
@@ -269,7 +269,7 @@ export default function DashboardPage() {
                       </span>
                       <span className="text-xs text-muted">
                         {latestInnings?.battingTeam === match.awayTeam.id
-                          ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                          ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${formatStoredOvers(latestInnings.totalOvers)})`
                           : ""}
                       </span>
                     </div>

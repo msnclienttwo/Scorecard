@@ -121,33 +121,30 @@ export default function LandingPage() {
 
   return (
     <div className="bg-[#070B14] min-h-screen overflow-hidden">
-      <section className="relative min-h-screen flex items-center justify-center px-4 pt-20">
-        <link
-          rel="preload"
-          as="image"
-          href="/Crickbolt.png"
-          fetchPriority="high"
-        />
-        <div className="absolute inset-0 overflow-hidden">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage: "url('/Crickbolt.png')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }}
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(to top, #070B14 0%, rgba(7,11,20,0.35) 30%, rgba(7,11,20,0) 55%), linear-gradient(to right, rgba(7,11,20,0.92) 0%, rgba(7,11,20,0.72) 40%, rgba(7,11,20,0.42) 70%, rgba(7,11,20,0.3) 100%)",
-            }}
-          />
-        </div>
-
-        <div className="relative max-w-5xl mx-auto w-full">
+      <link
+        rel="preload"
+        as="image"
+        href="/Crickbolt.png"
+        fetchPriority="high"
+      />
+      <div
+        aria-hidden
+        className="fixed inset-0 z-0 pointer-events-none"
+        style={{
+          backgroundImage: "url('/Crickbolt.png')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+      <div
+        aria-hidden
+        className="fixed inset-0 z-0 pointer-events-none"
+        style={{ backgroundColor: "rgba(0, 0, 0, 0.35)" }}
+      />
+      <div className="relative z-10">
+        <section className="relative min-h-screen flex items-center justify-center px-4 pt-20">
+          <div className="relative max-w-5xl mx-auto w-full">
           <div className="flex flex-col items-center gap-12">
             <motion.div
               initial="hidden"
@@ -246,7 +243,7 @@ export default function LandingPage() {
                 key={i}
                 variants={fadeUp}
                 whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                className="group p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-white/10 hover:bg-white/[0.06] transition-all duration-300"
+                className="group p-6 rounded-2xl bg-[#070B14]/65 backdrop-blur-sm border border-white/10 hover:border-white/20 hover:bg-[#070B14]/75 transition-all duration-300"
               >
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600/20 to-cyan-500/20 flex items-center justify-center mb-4 group-hover:from-blue-600/30 group-hover:to-cyan-500/30 transition-all">
                   <f.icon className="w-6 h-6 text-blue-400" />
@@ -292,7 +289,7 @@ export default function LandingPage() {
                 {i < 2 && (
                   <div className="hidden md:block absolute top-12 left-[60%] w-[80%] h-[1px] bg-gradient-to-r from-blue-500/30 to-transparent" />
                 )}
-                <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="p-6 rounded-2xl bg-[#070B14]/65 backdrop-blur-sm border border-white/10">
                   <div className="text-5xl font-bold text-white/10 mb-4">
                     {s.num}
                   </div>
@@ -331,7 +328,7 @@ export default function LandingPage() {
                 whileInView="visible"
                 viewport={{ once: true }}
                 variants={fadeUp}
-                className="rounded-2xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
+                className="rounded-2xl bg-[#070B14]/65 backdrop-blur-sm border border-white/10 overflow-hidden"
               >
                 <button
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
@@ -388,6 +385,7 @@ export default function LandingPage() {
           </motion.div>
         </div>
       </section>
+      </div>
     </div>
   );
 }

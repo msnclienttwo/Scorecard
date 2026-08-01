@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { cn, formatStoredOvers } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
 interface BallData {
@@ -161,7 +161,7 @@ export default function BallByBallPage() {
                 Innings {inn.inningsNumber}
               </h2>
               <p className="text-sm text-muted">
-                {inn.totalRuns}/{inn.totalWickets} ({inn.totalOvers} overs)
+                {inn.totalRuns}/{inn.totalWickets} ({formatStoredOvers(inn.totalOvers)} overs)
               </p>
             </div>
 
@@ -181,7 +181,7 @@ export default function BallByBallPage() {
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <span className="text-lg font-bold text-white">
-                          Over {over.overNumber + 1}
+                          Over {over.overNumber}
                         </span>
                         <span className="text-sm text-accent font-medium">
                           {over.totalRuns} runs
@@ -250,7 +250,7 @@ export default function BallByBallPage() {
                             className="text-xs text-muted/70 leading-relaxed"
                           >
                             <span className="text-white/50 font-mono">
-                              {over.overNumber + 1}.{ballInOver}
+                              {over.overNumber}.{ballInOver}
                             </span>{" "}
                             {ball.description ||
                               (ball.isWicket

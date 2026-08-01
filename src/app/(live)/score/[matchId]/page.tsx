@@ -11,9 +11,10 @@ import {
   Wifi,
   Loader2,
 } from "lucide-react";
-import { cn, formatOvers, calculateRunRate } from "@/lib/utils";
+import { cn, formatStoredOvers, parseOversToBalls, calculateRunRate } from "@/lib/utils";
+import { isLegalDelivery } from "@/lib/scoring";
 import { useSocketStore } from "@/store/useSocketStore";
-import type { Match, Innings, Over, BattingScorecard, BowlingScorecard } from "@/types";
+import type { Match, Innings, Over, Ball, BattingScorecard, BowlingScorecard } from "@/types";
 
 interface RecentBall {
   id: string;
@@ -25,12 +26,21 @@ interface RecentBall {
   ballNumber: number;
 }
 
+interface CommentaryEntry {
+  id: string;
+  overLabel: string;
+  bowlerName: string;
+  batsmanName: string;
+  text: string;
+  outcome: "FOUR" | "SIX" | "WICKET" | "EXTRA" | "RUN" | "DOT";
+}
+
 type MatchWithInnings = Match & {
   homeTeam: { id: string; name: string; shortName: string; logo: string | null };
   awayTeam: { id: string; name: string; shortName: string; logo: string | null };
   tournament: { id: string; name: string } | null;
   innings: (Innings & {
-    overs: Over[];
+    overs: (Over & { balls: Ball[] })[];
     battingCard: (BattingScorecard & { player: { id: string; name: string } })[];
     bowlingCard: (BowlingScorecard & { player: { id: string; name: string } })[];
   })[];
@@ -44,6 +54,80 @@ function getBallColor(runs: number, extras: string | null, isWicket: boolean): s
   if (runs === 4) return "bg-primary text-white";
   if (runs === 0) return "bg-white/10 text-muted";
   return "bg-success/20 text-success";
+}
+
+function buildCommentary(
+  innings: MatchWithInnings["innings"][number] | null
+): CommentaryEntry[] {
+  if (!innings) return [];
+
+  const playerName = new Map<string, string>();
+  (innings.battingCard ?? []).forEach((b) =>
+    playerName.set(b.player.id, b.player.name)
+  );
+  (innings.bowlingCard ?? []).forEach((b) =>
+    playerName.set(b.player.id, b.player.name)
+  );
+
+  const entries: CommentaryEntry[] = [];
+  let legal = 0;
+
+  for (const over of innings.overs ?? []) {
+    for (const ball of over.balls ?? []) {
+      const overLabel = `${Math.floor(legal / 6)}.${(legal % 6) + 1}`;
+      const bowlerName = playerName.get(ball.bowlerId) ?? "Bowler";
+      const batsmanName = playerName.get(ball.batsmanId) ?? "Batsman";
+
+      let text: string;
+      let outcome: CommentaryEntry["outcome"] = "RUN";
+
+      if (ball.isWicket) {
+        const type = (ball.wicketType ?? "wicket").replace(/_/g, " ");
+        text = `OUT! ${type.charAt(0).toUpperCase()}${type.slice(1)}.`;
+        outcome = "WICKET";
+      } else if (ball.extraType === "WIDE") {
+        const runs = Math.max(ball.extraRuns, 1);
+        text = `${runs} wide${runs > 1 ? "s" : ""}.`;
+        outcome = "EXTRA";
+      } else if (ball.extraType === "NO_BALL") {
+        text =
+          ball.runs > 0
+            ? `No ball, ${ball.runs} run${ball.runs > 1 ? "s" : ""}.`
+            : "No ball.";
+        outcome = "EXTRA";
+      } else if (ball.extraType === "BYE") {
+        text = `${ball.extraRuns} bye${ball.extraRuns === 1 ? "" : "s"}.`;
+        outcome = "EXTRA";
+      } else if (ball.extraType === "LEG_BYE") {
+        text = `${ball.extraRuns} leg ${ball.extraRuns === 1 ? "bye" : "byes"}.`;
+        outcome = "EXTRA";
+      } else if (ball.runs === 0) {
+        text = "No run.";
+        outcome = "DOT";
+      } else if (ball.runs === 4) {
+        text = "FOUR!";
+        outcome = "FOUR";
+      } else if (ball.runs === 6) {
+        text = "SIX!";
+        outcome = "SIX";
+      } else {
+        text = `${ball.runs} run${ball.runs > 1 ? "s" : ""}.`;
+      }
+
+      entries.push({
+        id: ball.id,
+        overLabel,
+        bowlerName,
+        batsmanName,
+        text,
+        outcome,
+      });
+
+      if (isLegalDelivery(ball.extraType)) legal += 1;
+    }
+  }
+
+  return entries.reverse();
 }
 
 export default function PublicLiveScorePage() {
@@ -170,41 +254,42 @@ export default function PublicLiveScorePage() {
     : null;
 
   const recentBalls: RecentBall[] = latestInnings
-    ? (latestInnings.overs || [])
-        .sort((a, b) => b.overNumber - a.overNumber)
-        .slice(0, 2)
-        .flatMap((ov) => {
-          const balls = [];
-          for (let i = 1; i <= ov.ballsCount; i++) {
-            const runs = ov.totalRuns;
-            const isWicket = ov.totalWickets > 0 && i === ov.ballsCount;
-            balls.push({
-              id: `${ov.id}-${i}`,
-              runs: isWicket ? 0 : Math.floor(runs / Math.max(ov.ballsCount, 1)),
-              isExtra: false,
-              extraType: null,
-              isWicket,
-              overNumber: ov.overNumber,
-              ballNumber: i,
-            });
-          }
-          return balls;
-        })
+    ? (latestInnings.overs ?? [])
+        .flatMap((ov) =>
+          (ov.balls ?? []).map((b) => ({
+            id: b.id,
+            runs: b.isWicket ? 0 : b.runs,
+            isExtra: b.isExtra,
+            extraType: b.extraType,
+            isWicket: b.isWicket,
+            overNumber: ov.overNumber,
+            ballNumber: b.ballNumber,
+          }))
+        )
+        .slice(-12)
     : [];
 
-  const displayedBalls = recentBalls.slice(-12);
+  const displayedBalls = recentBalls;
 
+  const ballsCompleted = latestInnings
+    ? parseOversToBalls(latestInnings.totalOvers)
+    : 0;
   const crr = latestInnings
-    ? calculateRunRate(latestInnings.totalRuns, latestInnings.totalOvers)
+    ? calculateRunRate(latestInnings.totalRuns, ballsCompleted / 6)
     : 0;
 
+  const ballsRemaining = match.totalOvers * 6 - ballsCompleted;
   const rrr =
-    latestInnings?.targetScore && latestInnings.totalOvers > 0
+    latestInnings?.targetScore &&
+    latestInnings.targetScore > latestInnings.totalRuns &&
+    ballsRemaining > 0
       ? calculateRunRate(
           latestInnings.targetScore - latestInnings.totalRuns,
-          match.totalOvers - latestInnings.totalOvers
+          ballsRemaining / 6
         )
       : null;
+
+  const commentary = buildCommentary(latestInnings);
 
   const shareText = `${match.name}: ${match.homeTeam.shortName} vs ${match.awayTeam.shortName} - Live Score`;
 
@@ -279,7 +364,7 @@ export default function PublicLiveScorePage() {
                   <p className="text-lg md:text-xl text-white/60 mt-2">
                     <span className="text-muted">Overs:</span>{" "}
                     <span className="text-white font-semibold">
-                      {latestInnings ? formatOvers(Math.round(latestInnings.totalOvers * 10)) : "0"}
+                      {latestInnings ? formatStoredOvers(latestInnings.totalOvers) : "0"}
                     </span>
                     <span className="text-muted"> / {match.totalOvers}</span>
                   </p>
@@ -362,6 +447,62 @@ export default function PublicLiveScorePage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"
+          >
+            <p className="text-xs text-muted mb-3 text-center">Commentary</p>
+            {commentary.length > 0 ? (
+              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                <AnimatePresence initial={false}>
+                  {commentary.map((c, i) => (
+                    <motion.div
+                      key={c.id}
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.02 }}
+                      className={cn(
+                        "flex items-start gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm",
+                        c.outcome === "WICKET" && "border-danger/30 bg-danger/10",
+                        c.outcome === "FOUR" && "border-primary/30 bg-primary/10",
+                        c.outcome === "SIX" && "border-accent/30 bg-accent/10"
+                      )}
+                    >
+                      <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted">
+                        {c.overLabel}
+                      </span>
+                      <p className="min-w-0 text-white/80">
+                        <span className="font-medium text-white">
+                          {c.bowlerName}
+                        </span>{" "}
+                        <span className="text-muted">to</span>{" "}
+                        <span className="font-medium text-white">
+                          {c.batsmanName}
+                        </span>
+                        ,{" "}
+                        <span
+                          className={cn(
+                            "font-semibold",
+                            c.outcome === "WICKET" && "text-danger",
+                            c.outcome === "FOUR" && "text-primary",
+                            c.outcome === "SIX" && "text-accent",
+                            c.outcome === "EXTRA" && "text-warning"
+                          )}
+                        >
+                          {c.text}
+                        </span>
+                      </p>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <p className="text-center text-muted text-xs">No balls bowled yet</p>
+            )}
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"
           >
@@ -390,7 +531,7 @@ export default function PublicLiveScorePage() {
                       {currentBowler.player.name}
                     </p>
                     <p className="text-xs text-danger">
-                      {currentBowler.overs}-{currentBowler.maidens}-{currentBowler.runs}-{currentBowler.wickets}
+                      {formatStoredOvers(currentBowler.overs)}-{currentBowler.maidens}-{currentBowler.runs}-{currentBowler.wickets}
                     </p>
                   </>
                 ) : (

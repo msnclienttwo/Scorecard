@@ -1,5 +1,7 @@
 "use client";
 
+import { formatStoredOvers } from "@/lib/utils";
+
 interface Batsman {
   number: number;
   name: string;
@@ -72,7 +74,7 @@ export default function BattingTable({ batsmen, extras, total }: BattingTablePro
               {total.runs}
             </td>
             <td colSpan={3} className="py-3 px-2 text-right text-white/50">
-              {total.wickets}/{total.overs} overs
+              {total.wickets}/{formatStoredOvers(total.overs)} overs
             </td>
             <td />
           </tr>

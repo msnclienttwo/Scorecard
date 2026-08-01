@@ -1,5 +1,7 @@
 "use client";
 
+import { formatStoredOvers } from "@/lib/utils";
+
 interface Bowler {
   name: string;
   overs: number;
@@ -38,7 +40,7 @@ export default function BowlingTable({ bowlers }: BowlingTableProps) {
               className="border-b border-white/5 hover:bg-white/5 transition-colors"
             >
               <td className="py-3 px-2 text-white font-medium">{b.name}</td>
-              <td className="py-3 px-2 text-right text-white/70">{b.overs}</td>
+              <td className="py-3 px-2 text-right text-white/70">{formatStoredOvers(b.overs)}</td>
               <td className="py-3 px-2 text-right text-white/70">{b.maidens}</td>
               <td className="py-3 px-2 text-right text-white/70">{b.runs}</td>
               <td className="py-3 px-2 text-right font-semibold text-white">

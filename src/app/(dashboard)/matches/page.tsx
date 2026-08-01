@@ -12,7 +12,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
+import { cn, formatStoredOvers } from "@/lib/utils";
 
 const tabs = ["All", "Live", "Upcoming", "Completed"] as const;
 
@@ -197,11 +197,11 @@ export default function MatchesPage() {
             const action = getMatchAction(match);
             const homeScore =
               latestInnings && latestInnings.battingTeam === match.homeTeam.id
-                ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${formatStoredOvers(latestInnings.totalOvers)})`
                 : "";
             const awayScore =
               latestInnings && latestInnings.battingTeam === match.awayTeam.id
-                ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${latestInnings.totalOvers})`
+                ? `${latestInnings.totalRuns}/${latestInnings.totalWickets} (${formatStoredOvers(latestInnings.totalOvers)})`
                 : "";
             return (
               <motion.div key={match.id} variants={item}>

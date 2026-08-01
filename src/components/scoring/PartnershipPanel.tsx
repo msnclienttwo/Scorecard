@@ -1,6 +1,6 @@
 "use client";
 
-import { formatOvers } from "@/lib/utils";
+import { formatStoredOvers } from "@/lib/utils";
 import type { FallOfWicketRef } from "@/hooks/useMatchLive";
 
 interface PartnershipPanelProps {
@@ -32,7 +32,7 @@ export function PartnershipPanel({
             <div key={f.id} className="flex justify-between text-xs">
               <span className="truncate text-white">{f.batterName}</span>
               <span className="shrink-0 tabular-nums text-muted">
-                {f.runs}/{f.wicketNumber} · {formatOvers(Math.round(f.overs * 6))}
+                {f.runs}/{f.wicketNumber} · {formatStoredOvers(f.overs)}
               </span>
             </div>
           ))}

@@ -18,7 +18,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
+import { cn, formatStoredOvers, parseOversToBalls } from "@/lib/utils";
 import { StartMatchModal } from "@/components/match/StartMatchModal";
 import type { Match, Team, Innings } from "@/types";
 
@@ -154,9 +154,14 @@ export default function MatchOverviewPage({
 
   const isLive = match.status === "LIVE";
   const currentInnings = isLive && match.innings.length > 0 ? match.innings[match.innings.length - 1] : null;
-  const currentRunRate = currentInnings && currentInnings.totalOvers > 0
-    ? (currentInnings.totalRuns / currentInnings.totalOvers).toFixed(2)
-    : null;
+  const currentOversDecimal =
+    currentInnings && parseOversToBalls(currentInnings.totalOvers) > 0
+      ? parseOversToBalls(currentInnings.totalOvers) / 6
+      : 0;
+  const currentRunRate =
+    currentInnings && currentOversDecimal > 0
+      ? (currentInnings.totalRuns / currentOversDecimal).toFixed(2)
+      : null;
 
   const officials = [
     match.umpire1 && { role: "Umpire", name: match.umpire1 },
@@ -212,7 +217,7 @@ export default function MatchOverviewPage({
                   </p>
                   <p className="text-lg text-white/70">
                     <span className="text-muted">Overs:</span>{" "}
-                    <span className="text-white font-semibold">{currentInnings.totalOvers}</span>
+                    <span className="text-white font-semibold">{formatStoredOvers(currentInnings.totalOvers)}</span>
                   </p>
                 </>
               ) : (

@@ -1,7 +1,7 @@
 "use client";
 
 import type { BowlingCardRef, PlayerRef } from "@/hooks/useMatchLive";
-import { formatOvers } from "@/lib/utils";
+import { formatStoredOvers } from "@/lib/utils";
 import { initials } from "./scoreUtils";
 
 interface BowlerCardProps {
@@ -18,7 +18,7 @@ export function BowlerCard({ bowler, card }: BowlerCardProps) {
     );
   }
 
-  const overs = formatOvers(Math.round((card?.overs ?? 0) * 6));
+  const overs = formatStoredOvers(card?.overs ?? 0);
   const maidens = card?.maidens ?? 0;
   const runs = card?.runs ?? 0;
   const wickets = card?.wickets ?? 0;

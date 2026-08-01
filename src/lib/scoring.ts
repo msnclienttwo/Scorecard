@@ -1225,8 +1225,9 @@ async function applyBallIncremental(
     (legal && ball.runs + ball.extraRuns === 0 && !ball.isWicket ? 1 : 0);
   const bowlMaidens =
     (existingBowl?.maidens ?? 0) + (overCompletedNow && newOverIsMaiden ? 1 : 0);
-  const bowlOvers = bowlBalls / 6;
-  const bowlEconomy = bowlOvers > 0 ? parseFloat((bowlRuns / bowlOvers).toFixed(2)) : 0;
+  const bowlOvers = formatOversFromBalls(bowlBalls);
+  const bowlOversDecimal = bowlBalls / 6;
+  const bowlEconomy = bowlOversDecimal > 0 ? parseFloat((bowlRuns / bowlOversDecimal).toFixed(2)) : 0;
   const bowlStrikeRate = bowlWickets > 0 ? parseFloat((bowlBalls / bowlWickets).toFixed(2)) : 0;
 
   await tx.bowlingScorecard.upsert({
@@ -1399,11 +1400,11 @@ async function applyBallIncremental(
       data: {
         matchId: match.id,
         inningsNumber: innings.inningsNumber,
-        overNumber: overNumber + 1,
+        overNumber,
         isAutomatic: true,
         isHighlight: false,
         eventType: "END_OF_OVER",
-        content: `End of over ${overNumber + 1}: ${newOverRuns} runs.`,
+        content: `End of over ${overNumber}: ${newOverRuns} runs.`,
       },
     });
   }
@@ -1672,7 +1673,8 @@ async function recomputeInnings(
     bowling.set(ball.bowlerId, b);
   }
   for (const card of bowling.values()) {
-    const overs = card.balls / 6;
+    const overs = formatOversFromBalls(card.balls);
+    const oversDecimal = card.balls / 6;
     await tx.bowlingScorecard.upsert({
       where: { inningsId_playerId: { inningsId, playerId: card.playerId } },
       update: {
@@ -1682,7 +1684,7 @@ async function recomputeInnings(
         wickets: card.wickets,
         wides: card.wides,
         noBalls: card.noBalls,
-        economy: overs > 0 ? parseFloat((card.runs / overs).toFixed(2)) : 0,
+        economy: oversDecimal > 0 ? parseFloat((card.runs / oversDecimal).toFixed(2)) : 0,
         strikeRate: card.wickets > 0 ? parseFloat((card.balls / card.wickets).toFixed(2)) : 0,
         dotBalls: card.dotBalls,
       },
@@ -1695,7 +1697,7 @@ async function recomputeInnings(
         wickets: card.wickets,
         wides: card.wides,
         noBalls: card.noBalls,
-        economy: overs > 0 ? parseFloat((card.runs / overs).toFixed(2)) : 0,
+        economy: oversDecimal > 0 ? parseFloat((card.runs / oversDecimal).toFixed(2)) : 0,
         strikeRate: card.wickets > 0 ? parseFloat((card.balls / card.wickets).toFixed(2)) : 0,
         dotBalls: card.dotBalls,
       },
@@ -1909,11 +1911,11 @@ async function recomputeInnings(
         data: {
           matchId: match.id,
           inningsNumber: innings.inningsNumber,
-          overNumber: overNumber + 1,
+          overNumber,
           isAutomatic: true,
           isHighlight: false,
           eventType: "END_OF_OVER",
-          content: `End of over ${overNumber + 1}: ${overRuns} runs.`,
+          content: `End of over ${overNumber}: ${overRuns} runs.`,
         },
       });
       overRuns = 0;

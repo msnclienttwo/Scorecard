@@ -15,7 +15,7 @@ import {
   Table,
   TrendingUp,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatStoredOvers } from "@/lib/utils";
 import type { Match, Team, Innings } from "@/types";
 
 interface MatchWithDetails extends Match {
@@ -124,7 +124,7 @@ export default function MatchLayout({
                   <div className="text-center px-3 py-1 bg-white/5 rounded-lg">
                     <p className="text-xs text-muted">Overs</p>
                     <p className="text-white font-bold">
-                      {currentInnings.totalOvers}
+                      {formatStoredOvers(currentInnings.totalOvers)}
                     </p>
                   </div>
                 </>
