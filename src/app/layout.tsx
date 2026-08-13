@@ -27,6 +27,11 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "ScoreBolt" }],
   creator: "ScoreBolt",
+  icons: {
+  icon: "/Scorebolt.png",
+  shortcut: "/Scorebolt.png",
+  apple: "/Scorebolt.png",
+},
   openGraph: {
     type: "website",
     locale: "en_US",
