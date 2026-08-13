@@ -11,9 +11,7 @@ import {
   CreditCard,
   ArrowRight,
   Play,
-  ChevronDown,
 } from "lucide-react";
-import { useState } from "react";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 40 },
@@ -93,32 +91,7 @@ const steps = [
   },
 ];
 
-const faqs = [
-  {
-    q: "Is ScoreBolt really free?",
-    a: "Yes! ScoreBolt is completely free to use. Create unlimited matches, score live, and share with the world. No credit card required.",
-  },
-  {
-    q: "Can I use ScoreBolt for my tournament?",
-    a: "Absolutely. ScoreBolt supports full tournament management including points tables, fixtures, playoffs, and live standings.",
-  },
-  {
-    q: "How does live sharing work?",
-    a: "Every match gets a unique URL. Share it via WhatsApp, Twitter, or any social platform. Viewers see real-time updates without needing an account.",
-  },
-  {
-    q: "Do you have a mobile app?",
-    a: "ScoreBolt is a Progressive Web App that works perfectly on mobile browsers. Install it on your home screen for a native app experience.",
-  },
-  {
-    q: "Can I track player statistics?",
-    a: "Yes, ScoreBolt tracks comprehensive player statistics including runs, averages, strike rates, wickets, economy, and much more.",
-  },
-];
-
 export default function LandingPage() {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-
   return (
     <div className="bg-[#070B14] min-h-screen overflow-hidden">
       <link
@@ -303,60 +276,6 @@ export default function LandingPage() {
               </motion.div>
             ))}
           </motion.div>
-        </div>
-      </section>
-
-      <section className="py-24 px-4">
-        <div className="max-w-3xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={fadeUp}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              Frequently asked questions
-            </h2>
-          </motion.div>
-
-          <div className="space-y-3">
-            {faqs.map((faq, i) => (
-              <motion.div
-                key={i}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true }}
-                variants={fadeUp}
-                className="rounded-2xl bg-[#070B14]/65 backdrop-blur-sm border border-white/10 overflow-hidden"
-              >
-                <button
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between p-5 text-left"
-                >
-                  <span className="font-medium text-white">{faq.q}</span>
-                  <ChevronDown
-                    className={`w-5 h-5 text-white/40 transition-transform ${
-                      openFaq === i ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-                <motion.div
-                  initial={false}
-                  animate={{
-                    height: openFaq === i ? "auto" : 0,
-                    opacity: openFaq === i ? 1 : 0,
-                  }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="px-5 pb-5 text-sm text-white/50 leading-relaxed">
-                    {faq.a}
-                  </div>
-                </motion.div>
-              </motion.div>
-            ))}
-          </div>
         </div>
       </section>
 

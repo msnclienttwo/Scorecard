@@ -109,9 +109,6 @@ export default function Navbar() {
               >
                 <Search className="h-4 w-4" />
                 <span>Search</span>
-                <kbd className="ml-4 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-xs text-muted">
-                  Ctrl+K
-                </kbd>
               </button>
 
               <button className="relative rounded-lg p-2 text-muted transition-colors hover:bg-white/5 hover:text-foreground md:hidden">
@@ -307,9 +304,6 @@ export default function Navbar() {
                   placeholder="Search matches, teams, players..."
                   className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
                 />
-                <kbd className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-muted">
-                  ESC
-                </kbd>
               </div>
               <div className="p-4">
                 <p className="text-xs font-medium uppercase tracking-wider text-muted">

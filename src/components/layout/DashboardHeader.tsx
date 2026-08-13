@@ -12,7 +12,6 @@ import {
   User,
   Settings,
   LogOut,
-  Command,
   CheckCheck,
   Trophy,
   Zap,
@@ -130,12 +129,8 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
             <input
               type="text"
               placeholder="Search..."
-              className="w-64 rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-16 text-sm text-foreground placeholder-muted outline-none transition-all focus:border-primary/50 focus:ring-1 focus:ring-primary/50 focus:w-80"
+              className="w-64 rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-3 text-sm text-foreground placeholder-muted outline-none transition-all focus:border-primary/50 focus:ring-1 focus:ring-primary/50 focus:w-80"
             />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5">
-              <Command className="h-3 w-3 text-muted" />
-              <span className="text-[10px] text-muted">K</span>
-            </div>
           </div>
         </div>
 
