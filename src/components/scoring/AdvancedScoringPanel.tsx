@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
   type AdvancedBallMeta,
@@ -7,6 +8,12 @@ import {
   shotLabel,
   zoneLabel,
 } from "@/lib/advancedScoring";
+import {
+  type BattingEnd,
+  type FieldPoint,
+  svgFromNormalized,
+  bandForDistance,
+} from "@/lib/fieldGeometry";
 import { CricketField } from "./CricketField";
 import { SectorFieldSelector } from "./SectorFieldSelector";
 import { ShotSelector } from "./ShotSelector";
@@ -14,6 +21,7 @@ import { FieldSettings } from "./FieldSettings";
 
 interface AdvancedScoringPanelProps {
   battingHand: BattingHand;
+  battingEnd: BattingEnd;
   freeHit: boolean;
   submitting: boolean;
   meta: AdvancedBallMeta;
@@ -23,6 +31,7 @@ interface AdvancedScoringPanelProps {
 
 export function AdvancedScoringPanel({
   battingHand,
+  battingEnd,
   freeHit,
   submitting,
   meta,
@@ -46,6 +55,62 @@ export function AdvancedScoringPanel({
     .filter(Boolean)
     .join(" · ");
 
+  /** Rebuild the tap point from the stored normalized coordinates. */
+  const selectedPoint = useCallback((): FieldPoint | null => {
+    if (
+      !meta.placementZone ||
+      meta.placementX === null ||
+      meta.placementY === null ||
+      meta.placementAngle === null ||
+      meta.placementDistance === null
+    ) {
+      return null;
+    }
+    const { svgX, svgY } = svgFromNormalized(
+      meta.placementX,
+      meta.placementY,
+      { handedness: battingHand, battingEnd }
+    );
+    return {
+      svgX,
+      svgY,
+      x: meta.placementX,
+      y: meta.placementY,
+      angle: meta.placementAngle,
+      distance: meta.placementDistance,
+      zone: meta.placementZone,
+      band: bandForDistance(meta.placementDistance),
+    };
+  }, [meta, battingHand, battingEnd]);
+
+  const handleFieldSelect = useCallback(
+    (point: FieldPoint) => {
+      onChange({
+        ...meta,
+        placementZone: point.zone,
+        placementX: point.x,
+        placementY: point.y,
+        placementAngle: point.angle,
+        placementDistance: point.distance,
+      });
+    },
+    [meta, onChange]
+  );
+
+  const handleClear = useCallback(() => {
+    onChange({
+      ...meta,
+      shotType: null,
+      placementZone: null,
+      placementX: null,
+      placementY: null,
+      placementAngle: null,
+      placementDistance: null,
+      fieldPositions: [],
+      isOverthrow: false,
+    });
+  }, [meta, onChange]);
+
   return (
     <div className="space-y-3 rounded-2xl border border-primary/20 bg-primary/[0.04] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -66,7 +131,7 @@ export function AdvancedScoringPanel({
           <button
             type="button"
             disabled={submitting || !hasAny}
-            onClick={() => onChange({ ...meta, shotType: null, placementZone: null, fieldPositions: [], isOverthrow: false })}
+            onClick={handleClear}
             className="rounded-full border border-white/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted hover:text-white disabled:opacity-40"
           >
             Clear
@@ -77,13 +142,9 @@ export function AdvancedScoringPanel({
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <CricketField
           battingHand={battingHand}
-          selectedZone={meta.placementZone}
-          onSelect={(zone) =>
-            onChange({
-              ...meta,
-              placementZone: meta.placementZone === zone ? null : zone,
-            })
-          }
+          battingEnd={battingEnd}
+          selected={selectedPoint()}
+          onSelect={handleFieldSelect}
         />
         <div className="flex flex-col justify-center gap-3">
           <SectorFieldSelector
@@ -92,6 +153,10 @@ export function AdvancedScoringPanel({
               onChange({
                 ...meta,
                 placementZone: meta.placementZone === zone ? null : zone,
+                placementX: null,
+                placementY: null,
+                placementAngle: null,
+                placementDistance: null,
               })
             }
           />
@@ -119,8 +184,9 @@ export function AdvancedScoringPanel({
             </button>
           </div>
           <p className="text-[10px] leading-relaxed text-muted">
-            Tap where the ball landed on the field, pick the shot, and set the
-            field. The chosen details are attached to the next ball you record.
+            Tap where the ball went on the field. The region is detected from
+            the exact spot — tap deeper for the deep field. Pick the shot, and
+            the details are attached to the next ball you record.
           </p>
         </div>
       </div>

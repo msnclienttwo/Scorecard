@@ -6,6 +6,8 @@ import {
   notifyMatchStarted,
   type MatchNotificationContext,
 } from "@/lib/notifications";
+import { buildDeterministicCommentary } from "@/lib/commentaryTemplates";
+import { maybeAutoGenerateAICommentary } from "@/lib/aiCommentary";
 import { Prisma } from "@prisma/client";
 import type {
   Ball,
@@ -541,6 +543,13 @@ export interface BallInput {
   description?: string | null;
   shotType?: string | null;
   placementZone?: string | null;
+  /** Normalized batter-relative placement coordinates (see fieldGeometry). */
+  placementX?: number | null;
+  placementY?: number | null;
+  placementAngle?: number | null;
+  placementDistance?: number | null;
+  /** Physical end the striker faces from: "TOP" | "BOTTOM". */
+  strikerEnd?: string | null;
   fieldPositions?: string | null;
   isFreeHit?: boolean;
   isOverthrow?: boolean;
@@ -746,6 +755,11 @@ export async function recordBall(
         ballResult: mapBallResult(runs, extraType),
         shotType: input.shotType ?? null,
         placementZone: input.placementZone ?? null,
+        placementX: input.placementX ?? null,
+        placementY: input.placementY ?? null,
+        placementAngle: input.placementAngle ?? null,
+        placementDistance: input.placementDistance ?? null,
+        strikerEnd: input.strikerEnd ?? innings.strikerEnd ?? "BOTTOM",
         fieldPositions: input.fieldPositions ?? null,
         isFreeHit,
         isOverthrow: input.isOverthrow ?? false,
@@ -789,6 +803,10 @@ export async function recordBall(
     emitScoringUpdate(matchId, { inningsId: innings.id, ball: result });
   }
 
+  // Fire-and-forget AI commentary generation. Never blocks score entry and
+  // never surfaces errors to the scorer — the background job is self-contained.
+  void maybeAutoGenerateAICommentary(matchId, result.id, user.sub);
+
   return { ball: result, innings: updatedInnings!, detail };
 }
 
@@ -825,6 +843,7 @@ export async function undoLastBall(
 
   await prisma.$transaction(async (tx) => {
     await tx.ball.delete({ where: { id: lastBall.id } });
+    await tx.commentary.deleteMany({ where: { ballId: lastBall.id } });
     await tx.innings.update({ where: { id: innings.id }, data: { endedAt: null } });
     await tx.match.update({
       where: { id: matchId },
@@ -893,6 +912,20 @@ export async function editBall(
           patch.placementZone === undefined
             ? existing.placementZone
             : patch.placementZone,
+        placementX:
+          patch.placementX === undefined ? existing.placementX : patch.placementX,
+        placementY:
+          patch.placementY === undefined ? existing.placementY : patch.placementY,
+        placementAngle:
+          patch.placementAngle === undefined
+            ? existing.placementAngle
+            : patch.placementAngle,
+        placementDistance:
+          patch.placementDistance === undefined
+            ? existing.placementDistance
+            : patch.placementDistance,
+        strikerEnd:
+          patch.strikerEnd === undefined ? existing.strikerEnd : patch.strikerEnd,
         fieldPositions:
           patch.fieldPositions === undefined
             ? existing.fieldPositions
@@ -907,6 +940,10 @@ export async function editBall(
       },
     });
 
+    // The delivery changed, so any commentary (deterministic, AI or manual)
+    // linked to it is stale. Deterministic rows are rebuilt by recompute.
+    await tx.commentary.deleteMany({ where: { ballId } });
+
     await recomputeInnings(tx, innings.id, match);
   });
 
@@ -915,6 +952,12 @@ export async function editBall(
   const detail = updatedInnings ? await getInningsDetail(innings.id) : null;
 
   emitScoringUpdate(matchId, { inningsId: innings.id, ball: updatedBall ?? existing });
+
+  // The delivery changed, so any AI line for it was removed above. Regenerate
+  // it in the background so the commentary matches the edited ball. Never
+  // blocks the edit and never surfaces errors to the scorer.
+  void maybeAutoGenerateAICommentary(matchId, ballId, user.sub);
+
   return { ball: updatedBall ?? existing, innings: updatedInnings, detail };
 }
 
@@ -933,6 +976,7 @@ export async function deleteBall(
 
   await prisma.$transaction(async (tx) => {
     await tx.ball.delete({ where: { id: ballId } });
+    await tx.commentary.deleteMany({ where: { ballId } });
     await tx.innings.update({ where: { id: innings.id }, data: { endedAt: null } });
     await tx.match.update({
       where: { id: matchId },
@@ -1117,7 +1161,7 @@ export async function swapStrike(matchId: string, user: AuthPayload) {
  */
 async function applyBallIncremental(
   tx: Prisma.TransactionClient,
-  match: Pick<Match, "id" | "totalOvers">,
+  match: Pick<Match, "id" | "totalOvers" | "format">,
   innings: Innings,
   ball: Ball,
   legalBallsBefore: number,
@@ -1313,6 +1357,16 @@ async function applyBallIncremental(
     [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
   }
 
+  // The physical end the striker faces from only changes when an over ends
+  // (the next over is bowled from the opposite end). Run-scoring rotation
+  // changes who stands at each end, not which end receives the ball.
+  const currentStrikerEnd = innings.strikerEnd ?? "BOTTOM";
+  const nextStrikerEnd = overComplete
+    ? currentStrikerEnd === "TOP"
+      ? "BOTTOM"
+      : "TOP"
+    : currentStrikerEnd;
+
   const newTotalRuns = innings.totalRuns + ball.runs + ball.extraRuns;
   const newTotalWickets = innings.totalWickets + (ball.isWicket ? 1 : 0);
   const newTotalOvers = formatOversFromBalls(newLegalCount);
@@ -1329,6 +1383,7 @@ async function applyBallIncremental(
       nonStrikerId,
       currentBowlerId: newCurrentBowlerId,
       battingOrderCount: battingOrder,
+      strikerEnd: nextStrikerEnd,
     },
   });
 
@@ -1351,19 +1406,29 @@ async function applyBallIncremental(
   const strikerName = nameById.get(ball.batsmanId) ?? "Batter";
   const bowlerName = nameById.get(ball.bowlerId) ?? "Bowler";
   const fielderName = ball.fielderId ? nameById.get(ball.fielderId) : undefined;
-  const content = buildBallCommentary(ball, strikerName, bowlerName, fielderName);
-  const isHighlight = ball.isWicket || ball.runs === 4 || ball.runs === 6;
   const overNumber = over.overNumber;
+  const isHighlight = ball.isWicket || ball.runs === 4 || ball.runs === 6;
+  const content = buildBallCommentary(ball, strikerName, bowlerName, fielderName, {
+    overNumber,
+    ballNumber: newLegalCount,
+    inningsNumber: innings.inningsNumber,
+    matchFormat: match.format,
+    currentRuns: newTotalRuns,
+    currentWickets: newTotalWickets,
+    target: innings.targetScore,
+  });
 
   await tx.commentary.create({
     data: {
       matchId: match.id,
+      ballId: ball.id,
       inningsNumber: innings.inningsNumber,
       overNumber,
       ballNumber: newLegalCount,
       isAutomatic: true,
       isHighlight,
       eventType: ball.isWicket ? "WICKET" : ball.runs === 6 ? "SIX" : ball.runs === 4 ? "FOUR" : "BALL",
+      generatedBy: "deterministic",
       content,
     },
   });
@@ -1389,12 +1454,14 @@ async function applyBallIncremental(
     await tx.commentary.create({
       data: {
         matchId: match.id,
+        ballId: ball.id,
         inningsNumber: innings.inningsNumber,
         overNumber,
         ballNumber: newLegalCount,
         isAutomatic: true,
         isHighlight: true,
         eventType: "MILESTONE",
+        generatedBy: "deterministic",
         content: `${strikerName} brings up his fifty!`,
       },
     });
@@ -1403,12 +1470,14 @@ async function applyBallIncremental(
     await tx.commentary.create({
       data: {
         matchId: match.id,
+        ballId: ball.id,
         inningsNumber: innings.inningsNumber,
         overNumber,
         ballNumber: newLegalCount,
         isAutomatic: true,
         isHighlight: true,
         eventType: "MILESTONE",
+        generatedBy: "deterministic",
         content: `${strikerName} reaches a magnificent century!`,
       },
     });
@@ -1417,12 +1486,14 @@ async function applyBallIncremental(
     await tx.commentary.create({
       data: {
         matchId: match.id,
+        ballId: ball.id,
         inningsNumber: innings.inningsNumber,
         overNumber,
         ballNumber: newLegalCount,
         isAutomatic: true,
         isHighlight: true,
         eventType: "MILESTONE",
+        generatedBy: "deterministic",
         content: `${bowlerName} claims a five-wicket haul!`,
       },
     });
@@ -1460,7 +1531,7 @@ const BALL_EVENT_TYPES = ["BALL", "WICKET", "BOUNDARY", "SIX", "MILESTONE"];
 async function recomputeInnings(
   tx: Prisma.TransactionClient,
   inningsId: string,
-  match: Pick<Match, "id" | "totalOvers">
+  match: Pick<Match, "id" | "totalOvers" | "format">
 ) {
   const innings = await tx.innings.findUnique({ where: { id: inningsId } });
   if (!innings) throw new Error("Innings not found.");
@@ -1745,6 +1816,10 @@ async function recomputeInnings(
   // undoing every delivery) keeps the innings ready to continue scoring.
   let strikerId: string | null = innings.strikerId;
   let nonStrikerId: string | null = innings.nonStrikerId;
+  // Physical end the striker faces from. The end only flips at over
+  // boundaries; each ball's stored end overrides the tracked value so manual
+  // live-state changes that didn't create a ball survive a recompute.
+  let strikerEnd: "TOP" | "BOTTOM" = (innings.strikerEnd ?? "BOTTOM") as "TOP" | "BOTTOM";
 
   for (const ball of balls) {
     const legal = isLegalDelivery(ball.extraType);
@@ -1752,6 +1827,10 @@ async function recomputeInnings(
 
     if (strikerId === null) strikerId = ball.batsmanId;
     if (nonStrikerId === null) nonStrikerId = ball.nonStrikerId;
+
+    if (ball.strikerEnd === "TOP" || ball.strikerEnd === "BOTTOM") {
+      strikerEnd = ball.strikerEnd;
+    }
 
     cumRuns += ball.runs + ball.extraRuns;
     if (legal) cumLegal += 1;
@@ -1781,6 +1860,9 @@ async function recomputeInnings(
     }
     if (overComplete && strikerId && nonStrikerId) {
       [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
+    }
+    if (overComplete) {
+      strikerEnd = strikerEnd === "TOP" ? "BOTTOM" : "TOP";
     }
   }
 
@@ -1833,12 +1915,14 @@ async function recomputeInnings(
       nonStrikerId,
       currentBowlerId,
       battingOrderCount: batting.size,
+      strikerEnd,
     },
   });
 
   // --- commentary + highlights ---
   cumRuns = 0;
   cumLegal = 0;
+  let cumWickets = 0;
   let overRuns = 0;
   const batterRuns = new Map<string, number>();
   const bowlerWickets = new Map<string, number>();
@@ -1852,24 +1936,35 @@ async function recomputeInnings(
 
     cumRuns += ball.runs + ball.extraRuns;
     overRuns += ball.runs + ball.extraRuns;
+    if (ball.isWicket) cumWickets += 1;
     if (legal) cumLegal += 1;
 
     const striker = nameById.get(ball.batsmanId) ?? "Batter";
     const bowler = nameById.get(ball.bowlerId) ?? "Bowler";
     const fielder = ball.fielderId ? nameById.get(ball.fielderId) : undefined;
 
-    const content = buildBallCommentary(ball, striker, bowler, fielder);
+    const content = buildBallCommentary(ball, striker, bowler, fielder, {
+      overNumber,
+      ballNumber: cumLegal,
+      inningsNumber: innings.inningsNumber,
+      matchFormat: match.format,
+      currentRuns: cumRuns,
+      currentWickets: cumWickets,
+      target: innings.targetScore,
+    });
     const isHighlight = ball.isWicket || ball.runs === 4 || ball.runs === 6;
 
     await tx.commentary.create({
       data: {
         matchId: match.id,
+        ballId: ball.id,
         inningsNumber: innings.inningsNumber,
         overNumber,
         ballNumber: cumLegal,
         isAutomatic: true,
         isHighlight,
         eventType: ball.isWicket ? "WICKET" : ball.runs === 6 ? "SIX" : ball.runs === 4 ? "FOUR" : "BALL",
+        generatedBy: "deterministic",
         content,
       },
     });
@@ -1895,12 +1990,14 @@ async function recomputeInnings(
       await tx.commentary.create({
         data: {
           matchId: match.id,
+          ballId: ball.id,
           inningsNumber: innings.inningsNumber,
           overNumber,
           ballNumber: cumLegal,
           isAutomatic: true,
           isHighlight: true,
           eventType: "MILESTONE",
+          generatedBy: "deterministic",
           content: `${striker} brings up his fifty!`,
         },
       });
@@ -1909,12 +2006,14 @@ async function recomputeInnings(
       await tx.commentary.create({
         data: {
           matchId: match.id,
+          ballId: ball.id,
           inningsNumber: innings.inningsNumber,
           overNumber,
           ballNumber: cumLegal,
           isAutomatic: true,
           isHighlight: true,
           eventType: "MILESTONE",
+          generatedBy: "deterministic",
           content: `${striker} reaches a magnificent century!`,
         },
       });
@@ -1927,12 +2026,14 @@ async function recomputeInnings(
         await tx.commentary.create({
           data: {
             matchId: match.id,
+            ballId: ball.id,
             inningsNumber: innings.inningsNumber,
             overNumber,
             ballNumber: cumLegal,
             isAutomatic: true,
             isHighlight: true,
             eventType: "MILESTONE",
+            generatedBy: "deterministic",
             content: `${bowler} claims a five-wicket haul!`,
           },
         });
@@ -2114,37 +2215,41 @@ function buildBallCommentary(
   ball: Ball,
   striker: string,
   bowler: string,
-  fielder?: string
+  fielder: string | undefined,
+  ctx: {
+    overNumber: number;
+    ballNumber: number;
+    inningsNumber: number;
+    matchFormat: string;
+    currentRuns: number;
+    currentWickets: number;
+    target: number | null;
+  }
 ): string {
-  const runs = ball.runs + ball.extraRuns;
-  const extraType = ball.extraType;
-
-  if (ball.isWicket) {
-    const type = ball.wicketType;
-    let suffix = "";
-    if (type === "BOWLED") suffix = ` bowled ${bowler}`;
-    else if (type === "CAUGHT") suffix = ` caught ${fielder ?? "in the deep"} bowled ${bowler}`;
-    else if (type === "LBW") suffix = ` lbw bowled ${bowler}`;
-    else if (type === "STUMPED") suffix = ` stumped ${fielder ?? "by the keeper"} bowled ${bowler}`;
-    else if (type === "RUN_OUT") suffix = ` run out${fielder ? ` (${fielder})` : ""}`;
-    else if (type === "HIT_WICKET") suffix = ` hit wicket bowled ${bowler}`;
-    else suffix = ` out ${type?.replace(/_/g, " ").toLowerCase()}`;
-    return `WICKET! ${striker}${suffix}.`;
-  }
-
-  if (extraType === "WIDE") {
-    return `Wide ball${runs > 1 ? ` plus ${runs - 1} run${runs - 1 > 1 ? "s" : ""}` : ""}.`;
-  }
-  if (extraType === "NO_BALL") {
-    return ball.runs > 0 ? `No ball. ${striker} scores ${ball.runs} off the free hit.` : "No ball.";
-  }
-  if (extraType === "BYE") return `Byes: ${runs}.`;
-  if (extraType === "LEG_BYE") return `Leg byes: ${runs}.`;
-  if (runs === 0) return `No run, bowled ${bowler}.`;
-  if (runs === 1) return `${striker} takes a single.`;
-  if (runs === 2) return `${striker} scores a couple of runs.`;
-  if (runs === 3) return `${striker} takes three runs.`;
-  if (runs === 4) return `FOUR! ${striker} finds the boundary.`;
-  if (runs === 6) return `SIX! ${striker} launches it over the ropes.`;
-  return `${striker} scores ${runs} runs.`;
+  return buildDeterministicCommentary({
+    ball: {
+      runs: ball.runs,
+      extraRuns: ball.extraRuns,
+      extraType: ball.extraType,
+      isWicket: ball.isWicket,
+      wicketType: ball.wicketType,
+      ballResult: ball.ballResult,
+      shotType: ball.shotType,
+      placementZone: ball.placementZone,
+      placementDistance: ball.placementDistance,
+      fieldPositions: ball.fieldPositions,
+      isFreeHit: ball.isFreeHit,
+      isOverthrow: ball.isOverthrow,
+    },
+    striker,
+    bowler,
+    fielder,
+    overNumber: ctx.overNumber,
+    ballNumber: ctx.ballNumber,
+    inningsNumber: ctx.inningsNumber,
+    matchFormat: ctx.matchFormat,
+    currentRuns: ctx.currentRuns,
+    currentWickets: ctx.currentWickets,
+    target: ctx.target,
+  });
 }

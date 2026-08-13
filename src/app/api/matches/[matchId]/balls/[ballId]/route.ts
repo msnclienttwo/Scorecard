@@ -36,6 +36,15 @@ export async function PATCH(
     }
     if ('shotType' in body) patch.shotType = body.shotType ?? null
     if ('placementZone' in body) patch.placementZone = body.placementZone ?? null
+    if (typeof body.placementX === 'number') patch.placementX = body.placementX
+    if (typeof body.placementY === 'number') patch.placementY = body.placementY
+    if (typeof body.placementAngle === 'number') {
+      patch.placementAngle = body.placementAngle
+    }
+    if (typeof body.placementDistance === 'number') {
+      patch.placementDistance = body.placementDistance
+    }
+    if ('strikerEnd' in body) patch.strikerEnd = body.strikerEnd ?? null
     if ('fieldPositions' in body) {
       patch.fieldPositions = body.fieldPositions ?? null
     }

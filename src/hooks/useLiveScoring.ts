@@ -22,6 +22,11 @@ export interface BallOutcomeInput {
   fielderId?: string | null;
   shotType?: string | null;
   placementZone?: string | null;
+  placementX?: number | null;
+  placementY?: number | null;
+  placementAngle?: number | null;
+  placementDistance?: number | null;
+  strikerEnd?: string | null;
   fieldPositions?: string | null;
   isOverthrow?: boolean;
 }
@@ -36,6 +41,11 @@ export interface EditBallPatch {
   fielderId?: string | null;
   shotType?: string | null;
   placementZone?: string | null;
+  placementX?: number | null;
+  placementY?: number | null;
+  placementAngle?: number | null;
+  placementDistance?: number | null;
+  strikerEnd?: string | null;
   fieldPositions?: string | null;
   isFreeHit?: boolean;
   isOverthrow?: boolean;
@@ -434,6 +444,11 @@ export function useLiveScoring(matchId: string) {
             fielderId: input.fielderId ?? null,
             shotType: input.shotType ?? null,
             placementZone: input.placementZone ?? null,
+            placementX: input.placementX ?? null,
+            placementY: input.placementY ?? null,
+            placementAngle: input.placementAngle ?? null,
+            placementDistance: input.placementDistance ?? null,
+            strikerEnd: input.strikerEnd ?? currentInnings.strikerEnd ?? null,
             fieldPositions: input.fieldPositions ?? null,
             isOverthrow: input.isOverthrow ?? false,
           }),
@@ -462,7 +477,14 @@ export function useLiveScoring(matchId: string) {
       runs: number,
       advanced?: Pick<
         BallOutcomeInput,
-        "shotType" | "placementZone" | "fieldPositions" | "isOverthrow"
+        | "shotType"
+        | "placementZone"
+        | "placementX"
+        | "placementY"
+        | "placementAngle"
+        | "placementDistance"
+        | "fieldPositions"
+        | "isOverthrow"
       >
     ): Promise<boolean> => {
       const extra = advanced ?? {};
@@ -482,7 +504,14 @@ export function useLiveScoring(matchId: string) {
       input: WicketConfirmInput,
       advanced?: Pick<
         BallOutcomeInput,
-        "shotType" | "placementZone" | "fieldPositions" | "isOverthrow"
+        | "shotType"
+        | "placementZone"
+        | "placementX"
+        | "placementY"
+        | "placementAngle"
+        | "placementDistance"
+        | "fieldPositions"
+        | "isOverthrow"
       >
     ): Promise<boolean> => {
       const preStriker = currentInnings?.strikerId;

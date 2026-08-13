@@ -41,6 +41,15 @@ export async function POST(
       description: body.description ?? null,
       shotType: body.shotType ?? null,
       placementZone: body.placementZone ?? null,
+      placementX:
+        typeof body.placementX === 'number' ? body.placementX : null,
+      placementY:
+        typeof body.placementY === 'number' ? body.placementY : null,
+      placementAngle:
+        typeof body.placementAngle === 'number' ? body.placementAngle : null,
+      placementDistance:
+        typeof body.placementDistance === 'number' ? body.placementDistance : null,
+      strikerEnd: body.strikerEnd ?? null,
       fieldPositions: body.fieldPositions ?? null,
       isFreeHit: typeof body.isFreeHit === 'boolean' ? body.isFreeHit : undefined,
       isOverthrow: typeof body.isOverthrow === 'boolean' ? body.isOverthrow : false,

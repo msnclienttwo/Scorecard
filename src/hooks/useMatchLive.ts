@@ -174,6 +174,11 @@ export interface BallRef {
   description?: string | null;
   shotType?: string | null;
   placementZone?: string | null;
+  placementX?: number | null;
+  placementY?: number | null;
+  placementAngle?: number | null;
+  placementDistance?: number | null;
+  strikerEnd?: string | null;
   fieldPositions?: string | null;
   isFreeHit?: boolean;
   isOverthrow?: boolean;
@@ -206,6 +211,7 @@ export interface InningsDetail {
   strikerId: string | null;
   nonStrikerId: string | null;
   currentBowlerId: string | null;
+  strikerEnd: string | null;
   battingOrderCount: number;
   endedAt: string | null;
   battingCard: BattingCardRef[];

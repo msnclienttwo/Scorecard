@@ -8,6 +8,7 @@ import {
   Coffee,
   Loader2,
   Lock,
+  MessageSquareText,
   Play,
   Trophy,
 } from "lucide-react";
@@ -30,6 +31,8 @@ import { ScoringPad } from "@/components/scoring/ScoringPad";
 import { QuickActionBar } from "@/components/scoring/QuickActionBar";
 import { AdvancedScoringPanel } from "@/components/scoring/AdvancedScoringPanel";
 import type { WicketTypeValue } from "@/components/scoring/scoreUtils";
+import { CommentaryStudio, type StudioBallRef } from "@/components/commentary/CommentaryStudio";
+import { useCommentarySelection } from "@/store/useCommentarySelection";
 import { SetUpInningsModal } from "@/components/scoring/SetUpInningsModal";
 import { DismissalModal } from "@/components/scoring/DismissalModal";
 import { NextBatterModal } from "@/components/scoring/NextBatterModal";
@@ -118,6 +121,26 @@ export default function LiveScoringPage() {
     useState<AdvancedBallMeta>(EMPTY_ADVANCED);
   const [dismissalWicketType, setDismissalWicketType] =
     useState<WicketTypeValue | null>(null);
+  const [showStudioMobile, setShowStudioMobile] = useState(false);
+
+  const { selectedBallId, setSelectedBallId } = useCommentarySelection();
+
+  // Flat list of every bowled ball (id + over + ball number) so the commentary
+  // studio can label and link manual/AI lines to a specific delivery.
+  const studioBalls = useMemo<StudioBallRef[]>(() => {
+    if (!currentInnings) return [];
+    const balls: StudioBallRef[] = [];
+    for (const over of currentInnings.overs ?? []) {
+      for (const b of over.balls ?? []) {
+        balls.push({
+          id: b.id,
+          overNumber: over.overNumber,
+          ballNumber: b.ballNumber,
+        });
+      }
+    }
+    return balls;
+  }, [currentInnings]);
 
   // Compact floating score bar: shown only while the full scoreboard is
   // scrolled out of view, hidden again as soon as it comes back into view.
@@ -580,7 +603,14 @@ export default function LiveScoringPage() {
         ) : showConsole ? (
           <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
             <div className="space-y-3">
-              <ThisOverStrip over={thisOver} lastBall={lastBall} />
+              <ThisOverStrip
+                over={thisOver}
+                lastBall={lastBall}
+                onBallClick={(id) =>
+                  setSelectedBallId(selectedBallId === id ? null : id)
+                }
+                selectedBallId={selectedBallId}
+              />
               <BatterCards
                 striker={striker}
                 nonStriker={nonStriker}
@@ -605,6 +635,11 @@ export default function LiveScoringPage() {
                 balls={partnership.balls}
                 fallOfWickets={currentInnings.fallOfWickets ?? []}
               />
+              <CommentaryStudio
+                matchId={matchId}
+                balls={studioBalls}
+                inningsNumber={currentInnings.inningsNumber}
+              />
             </aside>
           </div>
         ) : (
@@ -615,6 +650,25 @@ export default function LiveScoringPage() {
       {showDock && (
         <div className="sticky bottom-0 z-40 border-t border-white/10 bg-[#0a0f1a]/95 backdrop-blur">
           <div className="mx-auto max-w-6xl space-y-2 px-3 py-2.5 md:px-4">
+            <div className="flex items-center justify-between lg:hidden">
+              <button
+                type="button"
+                onClick={() => setShowStudioMobile(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <MessageSquareText className="h-3.5 w-3.5" />
+                Commentary Studio
+              </button>
+              {selectedBallId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedBallId(null)}
+                  className="text-[11px] text-white/40 hover:text-white"
+                >
+                  Clear ball link
+                </button>
+              )}
+            </div>
             <QuickActionBar
               submitting={submitting}
               hasLastBall={!!lastBall}
@@ -673,6 +727,9 @@ export default function LiveScoringPage() {
             {showConsole && advancedMode && (
               <AdvancedScoringPanel
                 battingHand={getBattingHand(striker)}
+                battingEnd={
+                  currentInnings?.strikerEnd === "TOP" ? "TOP" : "BOTTOM"
+                }
                 freeHit={nextBallIsFreeHit}
                 submitting={submitting}
                 meta={pendingAdvanced}
@@ -687,6 +744,26 @@ export default function LiveScoringPage() {
               onExtras={(kind) => setExtrasKind(kind)}
             />
           </div>
+        </div>
+      )}
+
+      {showStudioMobile && showConsole && (
+        <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-white/10 bg-[#0a0f1a]/95 p-3 backdrop-blur lg:hidden">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-bold text-white">Commentary Studio</p>
+            <button
+              type="button"
+              onClick={() => setShowStudioMobile(false)}
+              className="rounded-lg px-2 py-1 text-sm text-white/50 hover:text-white"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <CommentaryStudio
+            matchId={matchId}
+            balls={studioBalls}
+            inningsNumber={currentInnings?.inningsNumber}
+          />
         </div>
       )}
 

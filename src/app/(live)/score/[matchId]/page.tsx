@@ -12,10 +12,9 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn, formatStoredOvers, parseOversToBalls, calculateRunRate } from "@/lib/utils";
-import { isLegalDelivery } from "@/lib/scoring";
-import { shotLabel, zoneLabel } from "@/lib/advancedScoring";
+import { overLabel } from "@/lib/commentaryTemplates";
 import { useSocketStore } from "@/store/useSocketStore";
-import type { Match, Innings, Over, Ball, BattingScorecard, BowlingScorecard } from "@/types";
+import type { Match, Innings, Over, Ball, BattingScorecard, BowlingScorecard, Commentary } from "@/types";
 
 interface RecentBall {
   id: string;
@@ -27,19 +26,11 @@ interface RecentBall {
   ballNumber: number;
 }
 
-interface CommentaryEntry {
-  id: string;
-  overLabel: string;
-  bowlerName: string;
-  batsmanName: string;
-  text: string;
-  outcome: "FOUR" | "SIX" | "WICKET" | "EXTRA" | "RUN" | "DOT";
-}
-
 type MatchWithInnings = Match & {
   homeTeam: { id: string; name: string; shortName: string; logo: string | null };
   awayTeam: { id: string; name: string; shortName: string; logo: string | null };
   tournament: { id: string; name: string } | null;
+  commentary: Commentary[];
   innings: (Innings & {
     overs: (Over & { balls: Ball[] })[];
     battingCard: (BattingScorecard & { player: { id: string; name: string } })[];
@@ -55,90 +46,6 @@ function getBallColor(runs: number, extras: string | null, isWicket: boolean): s
   if (runs === 4) return "bg-primary text-white";
   if (runs === 0) return "bg-white/10 text-muted";
   return "bg-success/20 text-success";
-}
-
-function buildCommentary(
-  innings: MatchWithInnings["innings"][number] | null
-): CommentaryEntry[] {
-  if (!innings) return [];
-
-  const playerName = new Map<string, string>();
-  (innings.battingCard ?? []).forEach((b) =>
-    playerName.set(b.player.id, b.player.name)
-  );
-  (innings.bowlingCard ?? []).forEach((b) =>
-    playerName.set(b.player.id, b.player.name)
-  );
-
-  const entries: CommentaryEntry[] = [];
-  let legal = 0;
-
-  for (const over of innings.overs ?? []) {
-    for (const ball of over.balls ?? []) {
-      const overLabel = `${Math.floor(legal / 6)}.${(legal % 6) + 1}`;
-      const bowlerName = playerName.get(ball.bowlerId) ?? "Bowler";
-      const batsmanName = playerName.get(ball.batsmanId) ?? "Batsman";
-
-      let text: string;
-      let outcome: CommentaryEntry["outcome"] = "RUN";
-
-      if (ball.isWicket) {
-        const type = (ball.wicketType ?? "wicket").replace(/_/g, " ");
-        text = `OUT! ${type.charAt(0).toUpperCase()}${type.slice(1)}.`;
-        outcome = "WICKET";
-      } else if (ball.extraType === "WIDE") {
-        const runs = Math.max(ball.extraRuns, 1);
-        text = `${runs} wide${runs > 1 ? "s" : ""}.`;
-        outcome = "EXTRA";
-      } else if (ball.extraType === "NO_BALL") {
-        text =
-          ball.runs > 0
-            ? `No ball, ${ball.runs} run${ball.runs > 1 ? "s" : ""}.`
-            : "No ball.";
-        outcome = "EXTRA";
-      } else if (ball.extraType === "BYE") {
-        text = `${ball.extraRuns} bye${ball.extraRuns === 1 ? "" : "s"}.`;
-        outcome = "EXTRA";
-      } else if (ball.extraType === "LEG_BYE") {
-        text = `${ball.extraRuns} leg ${ball.extraRuns === 1 ? "bye" : "byes"}.`;
-        outcome = "EXTRA";
-      } else if (ball.runs === 0) {
-        text = "No run.";
-        outcome = "DOT";
-      } else if (ball.runs === 4) {
-        text = "FOUR!";
-        outcome = "FOUR";
-      } else if (ball.runs === 6) {
-        text = "SIX!";
-        outcome = "SIX";
-      } else {
-        text = `${ball.runs} run${ball.runs > 1 ? "s" : ""}.`;
-      }
-
-      const advancedNote = [
-        ball.shotType ? shotLabel(ball.shotType) : null,
-        ball.placementZone ? zoneLabel(ball.placementZone) : null,
-      ]
-        .filter(Boolean)
-        .join(" to ");
-      if (advancedNote) text += ` ${advancedNote}.`;
-      if (ball.isOverthrow) text += " (overthrow)";
-      if (ball.isFreeHit) text += " (free hit)";
-
-      entries.push({
-        id: ball.id,
-        overLabel,
-        bowlerName,
-        batsmanName,
-        text,
-        outcome,
-      });
-
-      if (isLegalDelivery(ball.extraType)) legal += 1;
-    }
-  }
-
-  return entries.reverse();
 }
 
 export default function PublicLiveScorePage() {
@@ -300,7 +207,12 @@ export default function PublicLiveScorePage() {
         )
       : null;
 
-  const commentary = buildCommentary(latestInnings);
+  const commentary = (match.commentary ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
   const shareText = `${match.name}: ${match.homeTeam.shortName} vs ${match.awayTeam.shortName} - Live Score`;
 
@@ -465,49 +377,54 @@ export default function PublicLiveScorePage() {
             {commentary.length > 0 ? (
               <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
                 <AnimatePresence initial={false}>
-                  {commentary.map((c, i) => (
-                    <motion.div
-                      key={c.id}
-                      initial={{ opacity: 0, y: -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.02 }}
-                      className={cn(
-                        "flex items-start gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm",
-                        c.outcome === "WICKET" && "border-danger/30 bg-danger/10",
-                        c.outcome === "FOUR" && "border-primary/30 bg-primary/10",
-                        c.outcome === "SIX" && "border-accent/30 bg-accent/10"
-                      )}
-                    >
-                      <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted">
-                        {c.overLabel}
-                      </span>
-                      <p className="min-w-0 text-white/80">
-                        <span className="font-medium text-white">
-                          {c.bowlerName}
-                        </span>{" "}
-                        <span className="text-muted">to</span>{" "}
-                        <span className="font-medium text-white">
-                          {c.batsmanName}
+                  {commentary.map((c, i) => {
+                    const isAILine =
+                      c.isAIGenerated || c.generatedBy === "AI";
+                    return (
+                      <motion.div
+                        key={c.id}
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                        className={cn(
+                          "flex items-start gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm",
+                          c.eventType === "WICKET" && "border-danger/30 bg-danger/10",
+                          c.eventType === "FOUR" && "border-primary/30 bg-primary/10",
+                          c.eventType === "SIX" && "border-accent/30 bg-accent/10"
+                        )}
+                      >
+                        <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted">
+                          {c.overNumber != null || c.ballNumber != null
+                            ? overLabel(
+                                c.overNumber ?? undefined,
+                                c.ballNumber ?? undefined
+                              ) || "•"
+                            : "•"}
                         </span>
-                        ,{" "}
-                        <span
-                          className={cn(
-                            "font-semibold",
-                            c.outcome === "WICKET" && "text-danger",
-                            c.outcome === "FOUR" && "text-primary",
-                            c.outcome === "SIX" && "text-accent",
-                            c.outcome === "EXTRA" && "text-warning"
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={cn(
+                              "leading-relaxed text-white/80",
+                              c.eventType === "WICKET" && "font-medium text-danger",
+                              c.eventType === "FOUR" && "font-medium text-primary",
+                              c.eventType === "SIX" && "font-medium text-accent"
+                            )}
+                          >
+                            {c.content}
+                          </p>
+                          {isAILine && (
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent">
+                              ✨ AI
+                            </span>
                           )}
-                        >
-                          {c.text}
-                        </span>
-                      </p>
-                    </motion.div>
-                  ))}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </AnimatePresence>
               </div>
             ) : (
-              <p className="text-center text-muted text-xs">No balls bowled yet</p>
+              <p className="text-center text-muted text-xs">No commentary yet</p>
             )}
           </motion.div>
 

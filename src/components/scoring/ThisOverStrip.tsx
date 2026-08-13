@@ -8,9 +8,16 @@ import { shotLabel, zoneLabel } from "@/lib/advancedScoring";
 interface ThisOverStripProps {
   over: OverRef | null;
   lastBall: BallRef | null;
+  onBallClick?: (ballId: string) => void;
+  selectedBallId?: string | null;
 }
 
-export function ThisOverStrip({ over, lastBall }: ThisOverStripProps) {
+export function ThisOverStrip({
+  over,
+  lastBall,
+  onBallClick,
+  selectedBallId,
+}: ThisOverStripProps) {
   const balls = over?.balls ?? [];
   const overNumber = over?.overNumber;
   const lastBallNote =
@@ -37,20 +44,38 @@ export function ThisOverStrip({ over, lastBall }: ThisOverStripProps) {
         {balls.length === 0 && (
           <p className="text-xs text-muted">No balls bowled yet.</p>
         )}
-        {balls.map((b) => (
-          <span
-            key={b.id}
-            title={[shotLabel(b.shotType), zoneLabel(b.placementZone)]
-              .filter(Boolean)
-              .join(" · ") || undefined}
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold",
-              getBallColor(b)
-            )}
-          >
-            {getBallDisplay(b)}
-          </span>
-        ))}
+        {balls.map((b) => {
+          const selected = b.id === selectedBallId;
+          const clickable = !!onBallClick;
+          const ball = (
+            <>
+              {getBallDisplay(b)}
+              {selected && (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#0d1320] bg-accent" />
+              )}
+            </>
+          );
+          return (
+            <span
+              key={b.id}
+              title={[
+                shotLabel(b.shotType),
+                zoneLabel(b.placementZone),
+                onBallClick ? "Click to link commentary" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || undefined}
+              onClick={clickable ? () => onBallClick(b.id) : undefined}
+              className={cn(
+                "relative flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold",
+                getBallColor(b),
+                clickable && "cursor-pointer transition-transform hover:scale-110"
+              )}
+            >
+              {ball}
+            </span>
+          );
+        })}
       </div>
     </section>
   );

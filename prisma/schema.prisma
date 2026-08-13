@@ -109,6 +109,7 @@ model User {
   tournaments   Tournament[]     @relation("TournamentOwner")
   notifications Notification[]
   comments      Commentary[]
+  commentarySettings CommentarySettings[]
 
   @@index([email])
   @@index([role])
@@ -340,6 +341,7 @@ model Match {
   innings       Innings[]
   events        MatchEvent[]
   commentary    Commentary[]
+  commentarySettings CommentarySettings[]
   playerOfMatch PlayerOfMatch?
   manOfTheMatch ManOfTheMatch?
 
@@ -415,6 +417,7 @@ model Innings {
   strikerId         String?
   nonStrikerId      String?
   currentBowlerId   String?
+  strikerEnd        String?   @default("BOTTOM")
   battingOrderCount Int      @default(0)
   endedAt           DateTime?
   createdAt         DateTime @default(now())
@@ -470,6 +473,11 @@ model Ball {
   shotType     String?
   placementZone String?
   fieldPositions String?
+  placementAngle Float?
+  placementDistance Float?
+  placementX   Float?
+  placementY   Float?
+  strikerEnd   String?   @default("BOTTOM")
   isFreeHit    Boolean   @default(false)
   isOverthrow  Boolean   @default(false)
   recordedById String?
@@ -479,6 +487,7 @@ model Ball {
 
   innings      Innings   @relation(fields: [inningsId], references: [id], onDelete: Cascade)
   over         Over      @relation(fields: [overId], references: [id], onDelete: Cascade)
+  commentary   Commentary[]
 
   @@index([inningsId])
   @@index([inningsId, ballNumber])
@@ -564,24 +573,59 @@ model MatchEvent {
 }
 
 model Commentary {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   matchId       String
   userId        String?
-  content       String   @db.Text
+  ballId        String?
+  content       String    @db.Text
   overNumber    Float?
   ballNumber    Int?
   inningsNumber Int?
-  isAutomatic   Boolean  @default(false)
-  isHighlight   Boolean  @default(false)
+  isAutomatic   Boolean   @default(false)
+  isHighlight   Boolean   @default(false)
   eventType     String?
   emoji         String?
-  createdAt     DateTime @default(now())
+  pinned        Boolean   @default(false)
+  generatedBy   String?
+  isAIGenerated Boolean   @default(false)
+  provider      String?
+  style         String?
+  language      String?
+  edited        Boolean   @default(false)
+  aiGeneratedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime? @updatedAt
 
-  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user          User?    @relation(fields: [userId], references: [id])
+  match         Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user          User?      @relation(fields: [userId], references: [id])
+  ball          Ball?      @relation(fields: [ballId], references: [id], onDelete: SetNull)
 
   @@index([matchId])
   @@index([createdAt])
+  @@index([matchId, createdAt])
+  @@index([ballId])
+}
+
+model CommentarySettings {
+  id            String   @id @default(cuid())
+  matchId       String
+  userId        String
+  aiEnabled     Boolean  @default(false)
+  voiceEnabled  Boolean  @default(true)
+  autoCommentary Boolean @default(true)
+  style         String   @default("professional")
+  language      String   @default("en")
+  provider      String   @default("openai")
+  temperature   Float    @default(0.7)
+  creativity    Float    @default(0.5)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, userId])
+  @@index([matchId])
 }
 
 model Notification {
