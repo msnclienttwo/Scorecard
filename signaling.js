@@ -15,11 +15,16 @@
  *   HOSTNAME                       - bind address (default 0.0.0.0)
  *   DATABASE_URL                   - PostgreSQL connection string (same as Vercel)
  *   AUTH_SECRET / NEXTAUTH_SECRET  - HS256 key for signaling tokens
- *   NEXT_PUBLIC_WEBRTC_SIGNALING_URL - public URL of this server (for CORS)
  *   WEBRTC_MAX_VIEWERS             - per-broadcast viewer cap (default 20)
  *   SIGNALING_RELAY_SECRET         - shared secret to authenticate HTTP relay
  *                                    requests from Vercel (required in production)
  *   NODE_ENV                       - production/development
+ *
+ * CORS: The signaling server is public — any origin can connect to watch a
+ * broadcast. CORS is always open (origin: "*"). Do NOT use
+ * NEXT_PUBLIC_WEBRTC_SIGNALING_URL to restrict CORS — that env var is for
+ * the client to know THIS server's URL, not for this server to restrict who
+ * can connect.
  *
  * Start:  node signaling.js
  *         or  PORT=3001 node signaling.js
@@ -28,7 +33,6 @@
  * network access to the PostgreSQL database.
  */
 const http = require("http");
-const { URL } = require("url");
 const { Server } = require("socket.io");
 const { PrismaClient } = require("@prisma/client");
 const { verifySignalingToken } = require("./src/lib/video/signaling-token");
@@ -40,10 +44,6 @@ const { verifySignalingToken } = require("./src/lib/video/signaling-token");
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME || "0.0.0.0";
 const port = parseInt(process.env.PORT || "3001", 10);
-
-const publicUrl =
-  process.env.NEXT_PUBLIC_WEBRTC_SIGNALING_URL ||
-  (dev ? `http://localhost:${port}` : null);
 
 const relaySecret = process.env.SIGNALING_RELAY_SECRET || "";
 const MAX_VIEWERS = (() => {
@@ -143,7 +143,6 @@ function leaveBroadcast(socket) {
       })
       .then((stream) => {
         if (!stream) return;
-        // Forward the stop event to the match room as well.
         try {
           io.to(`match:${matchId}`).emit("stream:updated", {
             matchId,
@@ -222,18 +221,28 @@ const server = http.createServer(async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // Socket.IO server
+//
+// CORS: The signaling server is public — any browser origin can connect.
+// We use origin: "*" which lets Engine.IO echo the request Origin header,
+// so Access-Control-Allow-Origin is always the specific browser origin
+// (never the literal "*"), which is valid with credentials.
+//
+// IMPORTANT: Do NOT set NEXT_PUBLIC_WEBRTC_SIGNALING_URL on this server
+// to restrict CORS. That env var is only for clients to find this server's URL.
 // ---------------------------------------------------------------------------
 
 io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: publicUrl || "*",
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 
 io.on("connection", (socket) => {
+  console.log(`[Signaling] socket connected: ${socket.id}`);
+
   // App room (score updates, commentary, stream/highlight events).
   socket.on("subscribe:match", (matchId) => {
     if (typeof matchId === "string" && matchId) {
@@ -262,6 +271,7 @@ io.on("connection", (socket) => {
       });
     }
     if (rateLimitJoin(socket.id)) {
+      console.log(`[Signaling] rate limited: ${socket.id}`);
       return socket.emit("broadcast:error", {
         code: "RATE_LIMIT",
         message: "Too many join attempts. Try again shortly.",
@@ -286,6 +296,7 @@ io.on("connection", (socket) => {
     if (role === "broadcaster") {
       const user = verifySignalingToken(socket.handshake.auth?.token);
       if (!user) {
+        console.log(`[Signaling] broadcaster auth FAILED: ${socket.id}`);
         return socket.emit("broadcast:error", {
           code: "UNAUTHORIZED",
           message: "A valid signaling token is required to broadcast",
@@ -332,6 +343,7 @@ io.on("connection", (socket) => {
         userSub: user.sub,
       });
       socket.join(`broadcast:${matchId}`);
+      console.log(`[Signaling] BROADCASTER joined match ${matchId} - socket ${socket.id} - user ${user.sub}`);
       io.to(`broadcast:${matchId}`).emit("broadcast:viewer-count", {
         count: viewerCount(room),
       });
@@ -339,6 +351,7 @@ io.on("connection", (socket) => {
       for (const [viewerId, meta] of room.sockets.entries()) {
         if (meta.role === "viewer") {
           sendTo(socket.id, "broadcast:viewer-joined", { socketId: viewerId });
+          console.log(`[Signaling]   -> notifying broadcaster of existing viewer ${viewerId}`);
         }
       }
     } else {
@@ -346,6 +359,7 @@ io.on("connection", (socket) => {
         .findUnique({ where: { matchId }, select: { status: true } })
         .catch(() => null);
       if (!stream || stream.status !== "LIVE") {
+        console.log(`[Signaling] viewer join rejected (NOT_LIVE): ${socket.id} match ${matchId} streamStatus=${stream?.status}`);
         return socket.emit("broadcast:error", {
           code: "NOT_LIVE",
           message: "There is no live broadcast for this match",
@@ -360,6 +374,7 @@ io.on("connection", (socket) => {
 
       room.sockets.set(socket.id, { matchId, role: "viewer" });
       socket.join(`broadcast:${matchId}`);
+      console.log(`[Signaling] VIEWER joined match ${matchId} - socket ${socket.id} (viewers: ${viewerCount(room)}, broadcaster: ${room.broadcasterId || "none"})`);
       io.to(`broadcast:${matchId}`).emit("broadcast:viewer-count", {
         count: viewerCount(room),
       });
@@ -367,11 +382,20 @@ io.on("connection", (socket) => {
         sendTo(room.broadcasterId, "broadcast:viewer-joined", {
           socketId: socket.id,
         });
+        console.log(`[Signaling]   -> sent viewer-joined to broadcaster ${room.broadcasterId}`);
+      } else {
+        console.log(`[Signaling]   -> NO BROADCASTER in room - viewer ${socket.id} will wait`);
       }
     }
   });
 
-  socket.on("broadcast:leave", () => leaveBroadcast(socket));
+  socket.on("broadcast:leave", () => {
+    const entry = roomMetaFor(socket.id);
+    if (entry) {
+      console.log(`[Signaling] socket leaving: ${socket.id} (match ${entry.meta.matchId}, role ${entry.meta.role})`);
+    }
+    leaveBroadcast(socket);
+  });
 
   socket.on("broadcast:offer", (payload) => {
     const entry = roomMetaFor(socket.id);
@@ -379,6 +403,7 @@ io.on("connection", (socket) => {
     if (payloadSize(payload?.offer) > MAX_SDP_LENGTH) return;
     const target = entry.room.sockets.get(payload?.to);
     if (!target || target.role !== "viewer") return;
+    console.log(`[Signaling] OFFER: broadcaster ${socket.id} -> viewer ${payload.to}`);
     sendTo(payload.to, "broadcast:offer", {
       offer: payload.offer,
       from: socket.id,
@@ -391,6 +416,7 @@ io.on("connection", (socket) => {
     if (payloadSize(payload?.answer) > MAX_SDP_LENGTH) return;
     const target = entry.room.sockets.get(payload?.to);
     if (!target || target.role !== "broadcaster") return;
+    console.log(`[Signaling] ANSWER: viewer ${socket.id} -> broadcaster ${payload.to}`);
     sendTo(payload.to, "broadcast:answer", {
       answer: payload.answer,
       from: socket.id,
@@ -420,7 +446,13 @@ io.on("connection", (socket) => {
     sendTo(viewerId, "broadcast:stopped", { reason: "kicked" });
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", (reason) => {
+    const entry = roomMetaFor(socket.id);
+    if (entry) {
+      console.log(`[Signaling] socket disconnected: ${socket.id} (match ${entry.meta.matchId}, role ${entry.meta.role}, reason: ${reason})`);
+    } else {
+      console.log(`[Signaling] socket disconnected: ${socket.id} (reason: ${reason})`);
+    }
     leaveBroadcast(socket);
     joinAttempts.delete(socket.id);
   });
@@ -433,9 +465,7 @@ io.on("connection", (socket) => {
 server.listen(port, hostname, () => {
   console.log(`> ScoreBolt signaling server ready on http://${hostname}:${port}`);
   console.log(`> Socket.IO listening on path /socket.io`);
-  if (publicUrl) {
-    console.log(`> Public URL: ${publicUrl}`);
-  }
+  console.log(`> CORS: open (any origin allowed)`);
   if (relaySecret) {
     console.log(`> HTTP relay: enabled (authenticated)`);
   } else {

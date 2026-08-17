@@ -244,6 +244,7 @@ export function useWebRTCBroadcaster(matchId: string) {
     const socket = signalingRef.current;
     if (!stream || !socket) return;
 
+    console.log(`[WebRTC Broadcaster] creating offer for viewer ${viewerSocketId}`);
     const pc = new RTCPeerConnection({
       iceServers: iceServersRef.current.map((s) => ({ ...s })),
     });
@@ -257,7 +258,11 @@ export function useWebRTCBroadcaster(matchId: string) {
         });
       }
     };
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[WebRTC Broadcaster] ICE state for viewer ${viewerSocketId}: ${pc.iceConnectionState}`);
+    };
     pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC Broadcaster] connection state for viewer ${viewerSocketId}: ${pc.connectionState}`);
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         const live = peersRef.current.get(viewerSocketId);
         if (live === pc) {
@@ -275,6 +280,7 @@ export function useWebRTCBroadcaster(matchId: string) {
         to: viewerSocketId,
         offer: pc.localDescription!.toJSON(),
       });
+      console.log(`[WebRTC Broadcaster] offer sent to viewer ${viewerSocketId}`);
     } catch {
       peersRef.current.delete(viewerSocketId);
       try {
@@ -423,8 +429,18 @@ export function useWebRTCBroadcaster(matchId: string) {
           );
         socket.on("broadcast:viewer-count", onCount);
         socket.on("broadcast:error", onErr);
+
+        if (!socket.connected) {
+          console.error("[WebRTC Broadcaster] emitJoin called but socket not connected");
+          settle(() => reject(new Error("Signaling server not connected")));
+          return;
+        }
+
+        console.log(`[WebRTC Broadcaster] joining match ${matchId} as broadcaster`);
         socket.emit("broadcast:join", { matchId, role: "broadcaster" });
-        window.setTimeout(() => settle(() => resolve()), 3000);
+
+        // Safety timeout: reject (not resolve) if no response in 10s.
+        window.setTimeout(() => settle(() => reject(new Error("Join timeout"))), 10_000);
       });
     },
     [matchId]
@@ -461,6 +477,7 @@ export function useWebRTCBroadcaster(matchId: string) {
       const tokenRes = await fetch("/api/video/signaling-token");
       if (!tokenRes.ok) throw new Error("Signaling auth failed.");
       const { token } = (await tokenRes.json()) as { token: string };
+      console.log("[WebRTC Broadcaster] signaling token obtained");
 
       const streamRes = await fetch(`/api/matches/${matchId}/stream`, {
         method: "POST",
@@ -480,21 +497,26 @@ export function useWebRTCBroadcaster(matchId: string) {
 
       // 4. Signaling socket
       const socketUrl = getClientSignalingUrl();
+      console.log(`[WebRTC Broadcaster] connecting to signaling server: ${socketUrl}`);
       const socket = io(socketUrl, {
         autoConnect: false,
         reconnection: true,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: 30,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 30000,
         auth: { token },
       });
       signalingRef.current = socket;
 
       socket.on("broadcast:viewer-joined", (payload: { socketId: string }) => {
+        console.log(`[WebRTC Broadcaster] viewer joined: ${payload?.socketId}`);
         if (payload?.socketId && statusRef.current === "LIVE") {
           void createOffer(payload.socketId);
         }
       });
       socket.on("broadcast:answer", (payload: { answer: unknown; from: string }) => {
+        console.log(`[WebRTC Broadcaster] answer received from ${payload?.from}`);
         const pc = peersRef.current.get(payload.from);
         if (pc && payload.answer) {
           void pc
@@ -533,12 +555,14 @@ export function useWebRTCBroadcaster(matchId: string) {
       );
       socket.on("connect", () => {
         if (statusRef.current === "RECONNECTING") {
+          console.log("[WebRTC Broadcaster] reconnected to signaling");
           void emitJoin(socket)
             .then(() => setStatus("LIVE"))
             .catch(() => {});
         }
       });
-      socket.on("disconnect", () => {
+      socket.on("disconnect", (reason: string) => {
+        console.log(`[WebRTC Broadcaster] disconnected from signaling: ${reason}`);
         if (statusRef.current === "LIVE") {
           closePeers();
           setStatus("RECONNECTING");
@@ -552,14 +576,37 @@ export function useWebRTCBroadcaster(matchId: string) {
         }
       });
 
-      socket.connect();
-
-      // App room subscription (highlight record requests + stream events).
-      socket.on("connect", () => {
-        socket.emit("subscribe:match", matchId);
+      // 5. Wait for socket to actually connect, then join room.
+      // This is critical: emitJoin must only be called after the socket is
+      // connected, otherwise the broadcast:join event is buffered and the
+      // 3-second fallback timeout fires before the server even processes it.
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(
+          () => reject(new Error("Signaling connection timeout (30s)")),
+          30_000
+        );
+        if (socket.connected) {
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        socket.once("connect", () => {
+          clearTimeout(timeout);
+          console.log(`[WebRTC Broadcaster] connected to signaling - socket ${socket.id}`);
+          resolve();
+        });
+        socket.once("connect_error", (err) => {
+          clearTimeout(timeout);
+          console.error("[WebRTC Broadcaster] signaling connection error:", err.message);
+          reject(new Error(`Signaling connection failed: ${err.message}`));
+        });
+        socket.connect();
       });
 
-      // 5. Join room, start recorder, mark LIVE
+      // App room subscription (highlight record requests + stream events).
+      socket.emit("subscribe:match", matchId);
+
+      // 6. Join room, start recorder, mark LIVE
       await emitJoin(socket);
 
       // Re-validate tracks before claiming live.
@@ -570,6 +617,7 @@ export function useWebRTCBroadcaster(matchId: string) {
 
       startRecorder();
       setStatus("LIVE");
+      console.log("[WebRTC Broadcaster] BROADCAST LIVE");
     } catch (err) {
       stopTracks();
       closePeers();
