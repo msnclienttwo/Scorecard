@@ -9,6 +9,7 @@ import {
 import { buildDeterministicCommentary } from "@/lib/commentaryTemplates";
 import { maybeAutoGenerateAICommentary } from "@/lib/aiCommentary";
 import { maybeAutoRecordHighlight } from "@/lib/video/highlights";
+import { getSignalingServerUrl } from "@/lib/video/signaling-url";
 import { Prisma } from "@prisma/client";
 import type {
   Ball,
@@ -128,9 +129,28 @@ export function emitToMatch(matchId: string, event: string, data: Record<string,
     const io = (global as unknown as {
       io?: { to: (room: string) => { emit: (e: string, d: unknown) => void } };
     }).io;
-    if (io) io.to(`match:${matchId}`).emit(event, { matchId, ...data });
+    if (io) {
+      io.to(`match:${matchId}`).emit(event, { matchId, ...data });
+      return;
+    }
   } catch {
-    // socket layer unavailable — real-time degrades to polling
+    // local io unavailable — try relay
+  }
+
+  // Serverless fallback: forward to the standalone signaling server.
+  const signalingUrl = getSignalingServerUrl();
+  if (signalingUrl && typeof globalThis.fetch === "function") {
+    const relaySecret = process.env.SIGNALING_RELAY_SECRET || "";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (relaySecret) headers["Authorization"] = `Bearer ${relaySecret}`;
+    globalThis
+      .fetch(`${signalingUrl}/relay`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ room: `match:${matchId}`, event, data: { matchId, ...data } }),
+        signal: AbortSignal.timeout(3000),
+      })
+      .catch(() => {});
   }
 }
 

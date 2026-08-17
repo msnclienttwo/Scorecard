@@ -6,6 +6,7 @@
     "dev": "node server.js",
     "build": "next build",
     "start": "node server.js",
+    "signaling": "node signaling.js",
     "lint": "eslint",
     "test": "vitest run",
     "db:generate": "prisma generate",

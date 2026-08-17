@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { motion } from "framer-motion";
-import { Radio, Users, WifiOff } from "lucide-react";
+import { Radio, Users, WifiOff, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSocketStore } from "@/store/useSocketStore";
 import { useWebRTCViewer } from "@/hooks/useWebRTCViewer";
@@ -64,7 +64,7 @@ function LiveVideoFeed({
   matchId: string;
   iceServers: ClientIceServer[];
 }) {
-  const { videoRef, status, viewerCount } = useWebRTCViewer(matchId, iceServers);
+  const { videoRef, status, viewerCount, error, retry } = useWebRTCViewer(matchId, iceServers);
   const showConnecting = status === "connecting" || status === "idle";
   const showReconnecting = status === "reconnecting";
   const showStopped = status === "stopped";
@@ -112,8 +112,17 @@ function LiveVideoFeed({
           </div>
         )}
         {showError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
-            <p className="text-xs text-danger">Live video unavailable</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 text-white">
+            <p className="text-xs text-danger text-center px-4">
+              {error || "Live video unavailable"}
+            </p>
+            <button
+              onClick={retry}
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-white/20"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Retry
+            </button>
           </div>
         )}
       </div>

@@ -31,6 +31,77 @@ Broadcaster browser                          Viewer browser
   existence, stream is LIVE, approved-broadcaster permission, viewer cap, and
   rate limits. Client-supplied roles are never trusted.
 
+## Deployment architecture
+
+ScoreBolt has two deployment modes:
+
+### Local development (single server)
+
+`server.js` runs both Next.js and Socket.IO on the same port:
+
+```bash
+npm run dev    # starts server.js → Next.js + Socket.IO on localhost:3000
+```
+
+Everything runs on the same origin. No separate signaling URL is needed.
+
+### Production (Vercel + separate signaling server)
+
+**Vercel does NOT run `server.js`.** Vercel deploys Next.js as serverless
+functions, which cannot host a persistent Socket.IO server. The WebRTC
+signaling server (`signaling.js`) must run separately:
+
+```
+┌─────────────────┐     HTTP relay      ┌──────────────────────┐
+│  Vercel          │ ──────────────────► │  Signaling server    │
+│  Next.js app     │                     │  signaling.js        │
+│  + API routes    │                     │  Socket.IO server    │
+│  + DB (Prisma)   │                     │  + room management   │
+└────────┬─────────┘                     └──────────┬───────────┘
+         │                                          │
+    Browser clients ◄──── Socket.IO ───────────────►│
+    (broadcaster + viewer)                          │
+         │                                          │
+         └──── WebRTC peer-to-peer (no server) ─────┘
+```
+
+1. **Vercel** hosts the Next.js frontend and API routes (database access,
+   authentication, stream status management).
+
+2. **Signaling server** (`signaling.js`) runs as a persistent Node.js process
+   on a VPS, Railway, Fly.io, or any platform that supports long-running
+   processes with WebSocket support.
+
+3. **Event relay**: When the Vercel API routes need to emit real-time events
+   (score updates, highlight record requests, stream status changes), they
+   forward them to the signaling server via HTTP POST `/relay`.
+
+### Setting up the signaling server
+
+1. Deploy `signaling.js` to your hosting platform:
+
+```bash
+# On the signaling server:
+DATABASE_URL="your-postgres-url"
+AUTH_SECRET="your-auth-secret"
+NEXT_PUBLIC_WEBRTC_SIGNALING_URL="https://signaling.yourdomain.com"
+SIGNALING_RELAY_SECRET="a-strong-random-secret"
+WEBRTC_MAX_VIEWERS=20
+PORT=3001
+node signaling.js
+```
+
+2. Set Vercel environment variables:
+
+```
+NEXT_PUBLIC_WEBRTC_SIGNALING_URL="https://signaling.yourdomain.com"
+SIGNALING_RELAY_URL="https://signaling.yourdomain.com"
+SIGNALING_RELAY_SECRET="the-same-strong-random-secret"
+```
+
+3. Ensure the signaling server has access to the same PostgreSQL database
+   (same `DATABASE_URL`).
+
 ## 1. Environment variables
 
 | Variable | Purpose | Default |
@@ -45,6 +116,9 @@ Broadcaster browser                          Viewer browser
 | `VIDEO_HIGHLIGHT_RETENTION_HOURS` | Clip lifetime | 12 |
 | `VIDEO_CLEANUP_SECRET` | Secret for the cleanup cron endpoint | empty |
 | `AUTH_SECRET` / `NEXTAUTH_SECRET` | Signs the signaling handshake tokens | — |
+| `NEXT_PUBLIC_WEBRTC_SIGNALING_URL` | Public URL of the signaling server (required for Vercel) | empty (same-origin) |
+| `SIGNALING_RELAY_URL` | Server-side URL for HTTP event relay | falls back to above |
+| `SIGNALING_RELAY_SECRET` | Shared secret for authenticated relay | empty |
 
 `isVideoConfigured()` returns true once at least one ICE server is set. For
 same-machine or same-LAN testing `WEBRTC_STUN_URL` alone is fine. For
@@ -148,7 +222,7 @@ curl -X POST https://your-app/api/video/highlights/cleanup \
 
 Handshake: broadcasters connect with `auth: { token }` where `token` is
 fetched from `GET /api/video/signaling-token` (an HS256 JWT scoped to
-`broadcast-signaling`, verified in `server.js`). Viewers need no auth.
+`broadcast-signaling`, verified in server.js/signaling.js). Viewers need no auth.
 
 Events on the `broadcast:{matchId}` room:
 
@@ -174,3 +248,22 @@ broadcaster disconnects unexpectedly.
   any viewers that rejoined).
 - Viewer: on reconnect the viewer re-emits `broadcast:join`; the broadcaster
   receives `viewer-joined` again and creates a fresh offer.
+
+## 7. HTTP relay endpoint
+
+When running on Vercel, the API routes cannot access `globalThis.io` directly.
+Instead, they forward real-time events to the signaling server via HTTP POST:
+
+```
+POST https://signaling.yourdomain.com/relay
+Authorization: Bearer <SIGNALING_RELAY_SECRET>
+Content-Type: application/json
+
+{
+  "room": "match:{matchId}",
+  "event": "score:updated",
+  "data": { "matchId": "...", "inningsId": "...", "ball": {...} }
+}
+```
+
+The signaling server broadcasts the event to all sockets in the room.

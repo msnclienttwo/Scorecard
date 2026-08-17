@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSocketStore } from "@/store/useSocketStore";
+import { io, type Socket } from "socket.io-client";
 import type { ClientIceServer } from "@/types/video";
+import { getClientSignalingUrl } from "@/lib/video/signaling-url";
 
 export type ViewerVideoStatus =
   | "idle"
@@ -17,6 +18,10 @@ export type ViewerVideoStatus =
  * RTCPeerConnection with the broadcaster. The broadcaster always initiates the
  * offer; the viewer answers and exchanges ICE candidates through the Socket.IO
  * signaling relay. No auth is required to watch a public broadcast.
+ *
+ * Uses a dedicated signaling socket that connects to the standalone signaling
+ * server (NEXT_PUBLIC_WEBRTC_SIGNALING_URL). This is required because on Vercel
+ * the signaling server runs independently of the Next.js app.
  */
 export function useWebRTCViewer(
   matchId: string,
@@ -30,8 +35,8 @@ export function useWebRTCViewer(
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const statusRef = useRef<ViewerVideoStatus>("idle");
   const joinedRef = useRef(false);
-
-  const { connect, isConnected, socket } = useSocketStore();
+  const signalingRef = useRef<Socket | null>(null);
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setStatus = useCallback((s: ViewerVideoStatus) => {
     statusRef.current = s;
@@ -53,18 +58,33 @@ export function useWebRTCViewer(
     }
   }, []);
 
+  const cleanupSignaling = useCallback(() => {
+    const s = signalingRef.current;
+    signalingRef.current = null;
+    if (s) {
+      s.removeAllListeners();
+      s.disconnect();
+    }
+  }, []);
+
   const join = useCallback(() => {
-    if (joinedRef.current) return;
+    const socket = signalingRef.current;
+    if (!socket || joinedRef.current) return;
     joinedRef.current = true;
     setStatus("connecting");
-    socket?.emit("broadcast:join", { matchId, role: "viewer" });
-  }, [matchId, setStatus, socket]);
+    socket.emit("broadcast:join", { matchId, role: "viewer" });
+  }, [matchId, setStatus]);
 
   // Offer handling (broadcaster always initiates).
   const handleOffer = useCallback(
     async (payload: { offer: unknown; from: string }) => {
       if (!payload?.offer || typeof payload.from !== "string") return;
       cleanupPeer();
+      // Cancel the connection timeout — we received an offer.
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
       setStatus("connecting");
 
       const pc = new RTCPeerConnection({
@@ -86,7 +106,7 @@ export function useWebRTCViewer(
       };
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          socket?.emit("broadcast:ice", {
+          signalingRef.current?.emit("broadcast:ice", {
             to: payload.from,
             candidate: e.candidate.toJSON(),
           });
@@ -103,7 +123,7 @@ export function useWebRTCViewer(
         await pc.setRemoteDescription(payload.offer as RTCSessionDescriptionInit);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        socket?.emit("broadcast:answer", {
+        signalingRef.current?.emit("broadcast:answer", {
           to: payload.from,
           answer: pc.localDescription!.toJSON(),
         });
@@ -113,13 +133,23 @@ export function useWebRTCViewer(
         setStatus("error");
       }
     },
-    [cleanupPeer, iceServers, setStatus, socket]
+    [cleanupPeer, iceServers, setStatus]
   );
 
-  // Persistent socket listeners.
+  // Create and manage the dedicated signaling socket.
   useEffect(() => {
-    if (!socket) return;
+    const socketUrl = getClientSignalingUrl();
+    const socket = io(socketUrl, {
+      autoConnect: false,
+      reconnection: true,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
+    signalingRef.current = socket;
 
+    // WebRTC signaling events.
     const onOffer = (payload: { offer: unknown; from: string }) => {
       void handleOffer(payload);
     };
@@ -143,31 +173,9 @@ export function useWebRTCViewer(
       setError(payload?.message ?? "Could not connect to the broadcast.");
       setStatus("error");
     };
-
-    socket.on("broadcast:offer", onOffer);
-    socket.on("broadcast:ice", onIce);
-    socket.on("broadcast:viewer-count", onCount);
-    socket.on("broadcast:stopped", onStopped);
-    socket.on("broadcast:error", onError);
-
-    return () => {
-      socket.off("broadcast:offer", onOffer);
-      socket.off("broadcast:ice", onIce);
-      socket.off("broadcast:viewer-count", onCount);
-      socket.off("broadcast:stopped", onStopped);
-      socket.off("broadcast:error", onError);
-    };
-  }, [cleanupPeer, handleOffer, setStatus, socket]);
-
-  // Join once the socket is up; rejoin after reconnects.
-  useEffect(() => {
-    if (isConnected) {
+    const onConnect = () => {
       join();
-    }
-  }, [isConnected, join]);
-
-  useEffect(() => {
-    if (!socket) return;
+    };
     const onDisconnect = () => {
       cleanupPeer();
       joinedRef.current = false;
@@ -175,19 +183,72 @@ export function useWebRTCViewer(
         setStatus("reconnecting");
       }
     };
-    socket.on("disconnect", onDisconnect);
-    return () => {
-      socket.off("disconnect", onDisconnect);
-    };
-  }, [cleanupPeer, setStatus, socket]);
 
-  // Leave the room + close the peer on unmount.
+    socket.on("broadcast:offer", onOffer);
+    socket.on("broadcast:ice", onIce);
+    socket.on("broadcast:viewer-count", onCount);
+    socket.on("broadcast:stopped", onStopped);
+    socket.on("broadcast:error", onError);
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+
+    socket.connect();
+
+    // Connection timeout: if no offer arrives within 15 seconds of joining,
+    // show an error with retry option instead of spinning forever.
+    const connectionTimeout = window.setTimeout(() => {
+      if (
+        statusRef.current === "connecting" ||
+        statusRef.current === "idle"
+      ) {
+        setError(
+          "Unable to connect to broadcast. The broadcaster may not be live, or the signaling server may be unreachable."
+        );
+        setStatus("error");
+      }
+    }, 15_000);
+
+    return () => {
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
+      socket.off("broadcast:offer", onOffer);
+      socket.off("broadcast:ice", onIce);
+      socket.off("broadcast:viewer-count", onCount);
+      socket.off("broadcast:stopped", onStopped);
+      socket.off("broadcast:error", onError);
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.emit("broadcast:leave");
+      cleanupPeer();
+      cleanupSignaling();
+    };
+  }, [cleanupPeer, cleanupSignaling, handleOffer, join, matchId, setStatus]);
+
+  // Leave the room on unmount.
   useEffect(() => {
     return () => {
-      socket?.emit("broadcast:leave");
-      cleanupPeer();
+      signalingRef.current?.emit("broadcast:leave");
     };
-  }, [cleanupPeer, socket]);
+  }, []);
 
-  return { videoRef, status, error, viewerCount };
+  const retry = useCallback(() => {
+    setError(null);
+    joinedRef.current = false;
+    cleanupPeer();
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+    const socket = signalingRef.current;
+    if (socket) {
+      if (!socket.connected) {
+        socket.connect();
+      } else {
+        join();
+      }
+    }
+  }, [cleanupPeer, join]);
+
+  return { videoRef, status, error, viewerCount, retry };
 }

@@ -1,3 +1,15 @@
+/**
+ * Real-time event relay for ScoreBolt.
+ *
+ * When server.js is running (local dev or self-hosted), `globalThis.io` is
+ * the Socket.IO server instance and events are emitted directly.
+ *
+ * When deployed to Vercel (serverless), `globalThis.io` is undefined. This
+ * module forwards events to the standalone signaling server via HTTP POST
+ * so connected clients still receive real-time updates.
+ */
+import { getSignalingServerUrl } from "@/lib/video/signaling-url";
+
 export interface CommentarySocketPayload {
   id: string;
   matchId: string;
@@ -11,18 +23,66 @@ export interface CommentarySocketPayload {
   createdAt: string;
 }
 
+type IoInstance = {
+  to: (room: string) => { emit: (e: string, d: unknown) => void };
+};
+
+function getIo(): IoInstance | null {
+  try {
+    const io = (global as unknown as { io?: IoInstance }).io;
+    return io ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Emit a Socket.IO event to a match room.
+ *
+ * Uses the local `globalThis.io` when available (server.js). Falls back to
+ * forwarding the event to the remote signaling server via HTTP POST when
+ * running in serverless (Vercel).
+ */
 function emitToMatch(
   matchId: string,
   event: string,
   data: Record<string, unknown>
 ): void {
-  try {
-    const io = (global as unknown as {
-      io?: { to: (room: string) => { emit: (e: string, d: unknown) => void } };
-    }).io;
-    if (io) io.to(`match:${matchId}`).emit(event, { matchId, ...data });
-  } catch {
-    // socket layer unavailable — real-time degrades to polling
+  const io = getIo();
+  if (io) {
+    try {
+      io.to(`match:${matchId}`).emit(event, { matchId, ...data });
+    } catch {
+      // socket layer unavailable — real-time degrades to polling
+    }
+    return;
+  }
+
+  // Serverless fallback: forward to the standalone signaling server.
+  const signalingUrl = getSignalingServerUrl();
+  if (signalingUrl && typeof globalThis.fetch === "function") {
+    const relaySecret = process.env.SIGNALING_RELAY_SECRET || "";
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (relaySecret) {
+      headers["Authorization"] = `Bearer ${relaySecret}`;
+    }
+    globalThis
+      .fetch(`${signalingUrl}/relay`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          room: `match:${matchId}`,
+          event,
+          data: { matchId, ...data },
+        }),
+        // Fire-and-forget; never block the API response.
+        signal: AbortSignal.timeout(3000),
+      })
+      .catch(() => {
+        // relay unavailable — real-time degrades to polling
+      });
   }
 }
 

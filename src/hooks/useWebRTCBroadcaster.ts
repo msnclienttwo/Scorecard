@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import type { ClientIceServer, GoLiveInfo } from "@/types/video";
+import { getClientSignalingUrl } from "@/lib/video/signaling-url";
 
 export type StudioStatus =
   | "NOT_CONFIGURED"
@@ -478,7 +479,7 @@ export function useWebRTCBroadcaster(matchId: string) {
       setStartedAt(streamBody?.stream?.startedAt ?? new Date().toISOString());
 
       // 4. Signaling socket
-      const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
+      const socketUrl = getClientSignalingUrl();
       const socket = io(socketUrl, {
         autoConnect: false,
         reconnection: true,
