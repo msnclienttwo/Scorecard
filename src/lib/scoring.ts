@@ -8,6 +8,7 @@ import {
 } from "@/lib/notifications";
 import { buildDeterministicCommentary } from "@/lib/commentaryTemplates";
 import { maybeAutoGenerateAICommentary } from "@/lib/aiCommentary";
+import { maybeAutoRecordHighlight } from "@/lib/video/highlights";
 import { Prisma } from "@prisma/client";
 import type {
   Ball,
@@ -806,6 +807,11 @@ export async function recordBall(
   // Fire-and-forget AI commentary generation. Never blocks score entry and
   // never surfaces errors to the scorer — the background job is self-contained.
   void maybeAutoGenerateAICommentary(matchId, result.id, user.sub);
+
+  // Fire-and-forget automatic highlight clipping (FOUR/SIX/WICKET) — runs
+  // detached exactly like AI commentary so scoring can never be held up or
+  // rolled back by video processing.
+  void maybeAutoRecordHighlight(matchId, result.id);
 
   return { ball: result, innings: updatedInnings!, detail };
 }

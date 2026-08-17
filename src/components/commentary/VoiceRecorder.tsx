@@ -47,7 +47,10 @@ export function VoiceRecorder({
     );
   }
 
-  const display = finalTranscript || interimTranscript;
+  const display = [finalTranscript, interimTranscript]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
   return (
     <div className="rounded-xl border border-accent/30 bg-accent/5 p-3">
@@ -72,7 +75,13 @@ export function VoiceRecorder({
             </span>
           )}
           <p className="truncate text-sm text-white/80">
-            {interimTranscript || display || "Speak the commentary…"}
+            {interimTranscript ||
+              display ||
+              (isListening
+                ? "Speak the commentary…"
+                : error
+                  ? "Press the mic to try again."
+                  : "Press the mic to start speaking.")}
           </p>
         </div>
       </div>

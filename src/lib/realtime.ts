@@ -78,3 +78,41 @@ export function emitCommentaryUpdated(
 export function emitCommentaryDeleted(matchId: string, commentaryId: string): void {
   emitToMatch(matchId, "commentary:deleted", { commentaryId });
 }
+
+export function emitStreamUpdated(
+  matchId: string,
+  data: {
+    status: string;
+    playbackUrl?: string | null;
+    startedAt?: string | null;
+    endedAt?: string | null;
+  }
+): void {
+  emitToMatch(matchId, "stream:updated", data);
+}
+
+export function emitHighlightUpdated(
+  matchId: string,
+  data: { action: string; highlightId?: string }
+): void {
+  emitToMatch(matchId, "highlight:updated", data);
+}
+
+/**
+ * Asks the active broadcaster's studio to cut a clip for a scoring event. The
+ * studio maintains a rolling MediaRecorder window, keeps recording a little
+ * more, then uploads the webm to the highlight's upload route. Timing values
+ * are sent from the server so client and server always agree.
+ */
+export function emitHighlightRecordRequest(
+  matchId: string,
+  data: {
+    highlightId: string;
+    ballId: string;
+    eventType: string;
+    preRollSeconds: number;
+    postRollSeconds: number;
+  }
+): void {
+  emitToMatch(matchId, "broadcast:record", data);
+}

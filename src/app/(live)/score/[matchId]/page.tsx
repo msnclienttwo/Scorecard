@@ -14,6 +14,8 @@ import {
 import { cn, formatStoredOvers, parseOversToBalls, calculateRunRate } from "@/lib/utils";
 import { overLabel } from "@/lib/commentaryTemplates";
 import { useSocketStore } from "@/store/useSocketStore";
+import { ViewerLiveVideo } from "@/components/video/ViewerLiveVideo";
+import { HighlightsSection } from "@/components/video/HighlightsSection";
 import type { Match, Innings, Over, Ball, BattingScorecard, BowlingScorecard, Commentary } from "@/types";
 
 interface RecentBall {
@@ -105,6 +107,8 @@ export default function PublicLiveScorePage() {
       "innings:ended",
       "strike:swapped",
       "commentary:added",
+      "stream:updated",
+      "highlight:updated",
     ];
     const handler = () => fetchMatch();
     events.forEach((event) => on(event, handler));
@@ -251,6 +255,8 @@ export default function PublicLiveScorePage() {
 
       <main className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-2xl space-y-6">
+          <ViewerLiveVideo matchId={matchId} />
+
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -427,6 +433,8 @@ export default function PublicLiveScorePage() {
               <p className="text-center text-muted text-xs">No commentary yet</p>
             )}
           </motion.div>
+
+          <HighlightsSection matchId={matchId} />
 
           <motion.div
             initial={{ opacity: 0, y: 10 }}

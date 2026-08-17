@@ -20,6 +20,8 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { cn, formatStoredOvers, parseOversToBalls } from "@/lib/utils";
 import { StartMatchModal } from "@/components/match/StartMatchModal";
+import { BroadcastManager } from "@/components/video/BroadcastManager";
+import { HighlightsSection } from "@/components/video/HighlightsSection";
 import type { Match, Team, Innings } from "@/types";
 
 interface MatchWithDetails extends Match {
@@ -336,6 +338,18 @@ export default function MatchOverviewPage({
           })}
         </div>
       </motion.div>
+
+      <motion.div variants={itemVariants}>
+        <BroadcastManager matchId={matchId} />
+      </motion.div>
+
+      {(match.status === "LIVE" ||
+        match.status === "INNINGS_BREAK" ||
+        match.status === "COMPLETED") && (
+        <motion.div variants={itemVariants}>
+          <HighlightsSection matchId={matchId} />
+        </motion.div>
+      )}
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <motion.div variants={itemVariants} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5">

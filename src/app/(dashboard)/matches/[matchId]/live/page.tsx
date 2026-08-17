@@ -32,6 +32,7 @@ import { QuickActionBar } from "@/components/scoring/QuickActionBar";
 import { AdvancedScoringPanel } from "@/components/scoring/AdvancedScoringPanel";
 import type { WicketTypeValue } from "@/components/scoring/scoreUtils";
 import { CommentaryStudio, type StudioBallRef } from "@/components/commentary/CommentaryStudio";
+import { GoLiveCard } from "@/components/video/GoLiveCard";
 import { useCommentarySelection } from "@/store/useCommentarySelection";
 import { SetUpInningsModal } from "@/components/scoring/SetUpInningsModal";
 import { DismissalModal } from "@/components/scoring/DismissalModal";
@@ -580,6 +581,7 @@ export default function LiveScoringPage() {
       )}
 
       <div className="mx-auto max-w-6xl px-3 py-4 md:px-4">
+        {!isCompleted && <GoLiveCard matchId={matchId} />}
         {isScheduled || (isReady && !currentInnings) ? (
           <PreStartCard
             status={status}

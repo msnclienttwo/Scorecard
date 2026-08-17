@@ -54,14 +54,17 @@ export function isSpeechRecognitionSupported(): boolean {
 
 export function createSpeechRecognition(
   language?: string,
-  interimResults = true
+  options: { interimResults?: boolean; continuous?: boolean } = {}
 ): SpeechRecognitionLike | null {
   const Ctor = getSpeechRecognitionConstructor();
   if (!Ctor) return null;
   const recognition = new Ctor();
   recognition.lang = speechRecognitionLanguage(language);
-  recognition.continuous = true;
-  recognition.interimResults = interimResults;
+  // Chrome's `continuous` mode is unreliable: restarted sessions frequently
+  // stop delivering results. `continuous: false` commits finals on each pause
+  // and the caller restarts with a fresh instance for seamless listening.
+  recognition.continuous = options.continuous ?? false;
+  recognition.interimResults = options.interimResults ?? true;
   recognition.maxAlternatives = 1;
   return recognition;
 }
