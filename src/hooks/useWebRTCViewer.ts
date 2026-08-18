@@ -8,6 +8,7 @@ import { getClientSignalingUrl } from "@/lib/video/signaling-url";
 export type ViewerVideoStatus =
   | "idle"
   | "connecting"
+  | "negotiating"
   | "live"
   | "reconnecting"
   | "stopped"
@@ -15,13 +16,19 @@ export type ViewerVideoStatus =
 
 /**
  * Joins the broadcast room as a viewer and negotiates a single
- * RTCPeerConnection with the broadcaster. The broadcaster always initiates the
- * offer; the viewer answers and exchanges ICE candidates through the Socket.IO
- * signaling relay. No auth is required to watch a public broadcast.
+ * RTCPeerConnection with the broadcaster.
  *
- * Uses a dedicated signaling socket that connects to the standalone signaling
- * server (NEXT_PUBLIC_WEBRTC_SIGNALING_URL). This is required because on Vercel
- * the signaling server runs independently of the Next.js app.
+ * Does NOT auto-connect — call `startWatching()` to initiate the connection
+ * (e.g. after the user clicks "Watch Live").
+ *
+ * ICE candidate queueing: candidates received before setRemoteDescription are
+ * buffered and flushed afterwards, preventing the black-screen race condition.
+ *
+ * Autoplay: tries unmuted first; on NotAllowedError falls back to muted and
+ * exposes `needsUnmute` / `unmute` so the UI can show an "Enable Sound" button.
+ *
+ * Reconnection: on temporary signaling/WebRTC failure the hook automatically
+ * attempts recovery (ICE restart, socket reconnect, re-join).
  */
 export function useWebRTCViewer(
   matchId: string,
@@ -30,15 +37,17 @@ export function useWebRTCViewer(
   const [status, setStatusState] = useState<ViewerVideoStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
+  const [needsUnmute, setNeedsUnmute] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const statusRef = useRef<ViewerVideoStatus>("idle");
   const joinedRef = useRef(false);
   const signalingRef = useRef<Socket | null>(null);
-  const connectionTimeoutRef = useRef<number | null>(null);
-  // Use a ref for iceServers so handleOffer doesn't change when query refetches,
-  // which would cause the entire signaling effect to rerun and break the connection.
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iceRestartCountRef = useRef(0);
+  const iceQueueRef = useRef<RTCIceCandidateInit[]>([]);
+  const watchingRef = useRef(false);
   const iceServersRef = useRef<ClientIceServer[]>(iceServers);
   iceServersRef.current = iceServers;
 
@@ -47,9 +56,14 @@ export function useWebRTCViewer(
     setStatusState(s);
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Cleanup helpers
+  // ---------------------------------------------------------------------------
+
   const cleanupPeer = useCallback(() => {
     const pc = pcRef.current;
     pcRef.current = null;
+    iceQueueRef.current = [];
     if (pc) {
       pc.ontrack = null;
       pc.onicecandidate = null;
@@ -58,7 +72,7 @@ export function useWebRTCViewer(
       try {
         pc.close();
       } catch {
-        // already closed
+        /* already closed */
       }
     }
   }, []);
@@ -72,28 +86,62 @@ export function useWebRTCViewer(
     }
   }, []);
 
-  const join = useCallback(() => {
-    const socket = signalingRef.current;
-    if (!socket || joinedRef.current) return;
-    joinedRef.current = true;
-    setStatus("connecting");
-    console.log(`[WebRTC Viewer] joining match ${matchId} as viewer`);
-    socket.emit("broadcast:join", { matchId, role: "viewer" });
-  }, [matchId, setStatus]);
+  const clearConnectionTimeout = useCallback(() => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+  }, []);
 
-  // Offer handling (broadcaster always initiates).
-  // Uses iceServersRef.current so this callback never changes when the query
-  // refetches, preventing the signaling effect from tearing down.
+  // ---------------------------------------------------------------------------
+  // Video playback — tries unmuted, falls back to muted
+  // ---------------------------------------------------------------------------
+
+  const tryPlayVideo = useCallback((video: HTMLVideoElement) => {
+    video.muted = false;
+    video.play()
+      .then(() => {
+        console.log("[WebRTC Viewer] video playback started (unmuted)");
+        setNeedsUnmute(false);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "NotAllowedError") {
+          console.log("[WebRTC Viewer] autoplay blocked, trying muted");
+          video.muted = true;
+          video.play()
+            .then(() => {
+              console.log("[WebRTC Viewer] video playback started (muted) — enable sound available");
+              setNeedsUnmute(true);
+            })
+            .catch(() => {});
+        }
+      });
+  }, []);
+
+  const unmute = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = false;
+    video.play()
+      .then(() => {
+        setNeedsUnmute(false);
+        console.log("[WebRTC Viewer] sound enabled by user");
+      })
+      .catch(() => {
+        /* keep showing enable sound button */
+      });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Offer handling (broadcaster always initiates)
+  // ---------------------------------------------------------------------------
+
   const handleOffer = useCallback(
     async (payload: { offer: unknown; from: string }) => {
       if (!payload?.offer || typeof payload.from !== "string") return;
       cleanupPeer();
-      // Cancel the connection timeout — we received an offer.
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-      setStatus("connecting");
+      clearConnectionTimeout();
+      setStatus("negotiating");
       console.log(`[WebRTC Viewer] offer received from ${payload.from}`);
 
       const pc = new RTCPeerConnection({
@@ -101,8 +149,11 @@ export function useWebRTCViewer(
       });
       pcRef.current = pc;
 
+      // Reset ICE restart counter on fresh offer
+      iceRestartCountRef.current = 0;
+
       pc.ontrack = (e) => {
-        console.log("[WebRTC Viewer] ontrack received");
+        console.log(`[WebRTC Viewer] remote track received: ${e.track.kind}`);
         const video = videoRef.current;
         if (!video) return;
         const remoteStream = e.streams[0] ?? new MediaStream([e.track]);
@@ -110,11 +161,18 @@ export function useWebRTCViewer(
           video.srcObject = remoteStream;
           video.autoplay = true;
           video.playsInline = true;
-          void video.play().catch(() => {});
+          tryPlayVideo(video);
         }
-        setStatus("live");
-        console.log("[WebRTC Viewer] video playing - status: live");
+        // Only transition to live when ICE is also connected
+        if (
+          pc.iceConnectionState === "connected" ||
+          pc.iceConnectionState === "completed"
+        ) {
+          setStatus("live");
+          console.log("[WebRTC Viewer] connection live — remote tracks playing");
+        }
       };
+
       pc.onicecandidate = (e) => {
         if (e.candidate) {
           signalingRef.current?.emit("broadcast:ice", {
@@ -123,19 +181,83 @@ export function useWebRTCViewer(
           });
         }
       };
+
       pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC Viewer] ICE state: ${pc.iceConnectionState}`);
+        const state = pc.iceConnectionState;
+        console.log(`[WebRTC Viewer] ICE state: ${state}`);
+
+        if (state === "connected" || state === "completed") {
+          // If remote tracks already arrived, go live
+          const video = videoRef.current;
+          if (video?.srcObject) {
+            setStatus("live");
+            console.log("[WebRTC Viewer] connection live (ICE connected)");
+          }
+        } else if (state === "failed") {
+          console.log("[WebRTC Viewer] ICE connection failed");
+          if (iceRestartCountRef.current < 3) {
+            iceRestartCountRef.current++;
+            console.log(
+              `[WebRTC Viewer] attempting ICE restart (${iceRestartCountRef.current}/3)`
+            );
+            setStatus("reconnecting");
+            try {
+              pc.restartIce();
+            } catch {
+              cleanupPeer();
+              setStatus("error");
+              setError("Connection lost.");
+            }
+          } else {
+            cleanupPeer();
+            setStatus("error");
+            setError("Connection lost after multiple attempts.");
+          }
+        } else if (state === "disconnected") {
+          console.log("[WebRTC Viewer] ICE disconnected — waiting for recovery");
+          setTimeout(() => {
+            if (
+              pc.iceConnectionState === "disconnected" &&
+              pcRef.current === pc
+            ) {
+              setStatus("reconnecting");
+            }
+          }, 3000);
+        }
       };
+
       pc.onconnectionstatechange = () => {
-        console.log(`[WebRTC Viewer] connection state: ${pc.connectionState}`);
-        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-          if (pcRef.current === pc) cleanupPeer();
-          setStatus("stopped");
+        console.log(
+          `[WebRTC Viewer] connection state: ${pc.connectionState}`
+        );
+        if (
+          pc.connectionState === "failed" ||
+          pc.connectionState === "closed"
+        ) {
+          if (pcRef.current === pc) {
+            cleanupPeer();
+            setStatus("stopped");
+          }
         }
       };
 
       try {
-        await pc.setRemoteDescription(payload.offer as RTCSessionDescriptionInit);
+        await pc.setRemoteDescription(
+          payload.offer as RTCSessionDescriptionInit
+        );
+        console.log("[WebRTC Viewer] remote description set");
+
+        // Flush queued ICE candidates
+        const queued = iceQueueRef.current.splice(0);
+        for (const candidate of queued) {
+          try {
+            await pc.addIceCandidate(candidate);
+            console.log("[WebRTC Viewer] queued ICE candidate applied");
+          } catch {
+            /* best-effort */
+          }
+        }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         signalingRef.current?.emit("broadcast:answer", {
@@ -150,16 +272,18 @@ export function useWebRTCViewer(
         setStatus("error");
       }
     },
-    [cleanupPeer, setStatus]
+    [cleanupPeer, clearConnectionTimeout, setStatus, tryPlayVideo]
   );
 
-  // Create and manage the dedicated signaling socket.
-  // IMPORTANT: dependencies are stable callbacks only — NOT iceServers.
-  // iceServers is accessed via iceServersRef to prevent this effect from
-  // rerunning when the query refetches (which would destroy the connection).
-  useEffect(() => {
+  // ---------------------------------------------------------------------------
+  // Socket factory
+  // ---------------------------------------------------------------------------
+
+  const createSignalingSocket = useCallback(() => {
     const socketUrl = getClientSignalingUrl();
-    console.log(`[WebRTC Viewer] connecting to signaling server: ${socketUrl}`);
+    console.log(
+      `[WebRTC Viewer] connecting to signaling server: ${socketUrl}`
+    );
     const socket = io(socketUrl, {
       autoConnect: false,
       reconnection: true,
@@ -170,16 +294,23 @@ export function useWebRTCViewer(
     });
     signalingRef.current = socket;
 
-    // WebRTC signaling events.
     const onOffer = (payload: { offer: unknown; from: string }) => {
       void handleOffer(payload);
     };
     const onIce = (payload: { candidate: unknown; from: string }) => {
       const pc = pcRef.current;
-      if (pc && payload?.candidate) {
-        void pc
-          .addIceCandidate(payload.candidate as RTCIceCandidateInit)
-          .catch(() => {});
+      if (payload?.candidate) {
+        if (pc && pc.remoteDescription) {
+          void pc
+            .addIceCandidate(payload.candidate as RTCIceCandidateInit)
+            .catch(() => {});
+          console.log("[WebRTC Viewer] ICE candidate applied");
+        } else {
+          iceQueueRef.current.push(
+            payload.candidate as RTCIceCandidateInit
+          );
+          console.log("[WebRTC Viewer] ICE candidate queued");
+        }
       }
     };
     const onCount = (payload: { count: number }) => {
@@ -197,14 +328,21 @@ export function useWebRTCViewer(
       setStatus("error");
     };
     const onConnect = () => {
-      console.log(`[WebRTC Viewer] connected to signaling - socket ${socket.id}`);
-      join();
+      console.log(
+        `[WebRTC Viewer] connected to signaling — socket ${socket.id}`
+      );
+      if (!joinedRef.current) {
+        joinedRef.current = true;
+        console.log(`[WebRTC Viewer] joining match ${matchId} as viewer`);
+        socket.emit("broadcast:join", { matchId, role: "viewer" });
+      }
     };
     const onDisconnect = (reason: string) => {
       console.log(`[WebRTC Viewer] disconnected from signaling: ${reason}`);
       cleanupPeer();
       joinedRef.current = false;
-      if (statusRef.current === "live" || statusRef.current === "connecting") {
+      const cur = statusRef.current;
+      if (cur === "live" || cur === "connecting" || cur === "negotiating") {
         setStatus("reconnecting");
       }
     };
@@ -217,140 +355,103 @@ export function useWebRTCViewer(
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
 
+    return socket;
+  }, [matchId, handleOffer, cleanupPeer, setStatus]);
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  /** Initialize and start watching the broadcast. */
+  const startWatching = useCallback(() => {
+    if (watchingRef.current) return;
+    watchingRef.current = true;
+    setError(null);
+    setNeedsUnmute(false);
+    setStatus("connecting");
+
+    const socket = createSignalingSocket();
     socket.connect();
 
-    // Connection timeout: if no offer arrives within 45 seconds,
-    // show an error with retry option. This is long enough for Render free
-    // tier cold starts (30-60s) while still providing feedback.
-    connectionTimeoutRef.current = window.setTimeout(() => {
+    // Connection timeout — long enough for Render free-tier cold starts
+    connectionTimeoutRef.current = setTimeout(() => {
       if (
         statusRef.current === "connecting" ||
         statusRef.current === "idle"
       ) {
-        console.error("[WebRTC Viewer] connection timeout - no offer received within 45s");
+        console.error("[WebRTC Viewer] connection timeout — no offer within 45 s");
         setError(
           "Unable to connect to broadcast. The broadcaster may not be live, or the signaling server may be unreachable."
         );
         setStatus("error");
       }
     }, 45_000);
+  }, [createSignalingSocket, setStatus]);
 
+  /** Full clean reset and reconnect. */
+  const retry = useCallback(() => {
+    console.log("[WebRTC Viewer] retrying connection");
+    watchingRef.current = false;
+    setError(null);
+    setNeedsUnmute(false);
+    joinedRef.current = false;
+    cleanupPeer();
+    clearConnectionTimeout();
+    cleanupSignaling();
+
+    // Brief delay then reconnect with a fresh socket
+    setTimeout(() => {
+      watchingRef.current = true;
+      setStatus("connecting");
+
+      const socket = createSignalingSocket();
+      socket.connect();
+
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (
+          statusRef.current === "connecting" ||
+          statusRef.current === "idle"
+        ) {
+          setError("Unable to connect to broadcast.");
+          setStatus("error");
+        }
+      }, 45_000);
+    }, 500);
+  }, [
+    cleanupPeer,
+    clearConnectionTimeout,
+    cleanupSignaling,
+    createSignalingSocket,
+    setStatus,
+  ]);
+
+  // ---------------------------------------------------------------------------
+  // Cleanup on unmount
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
     return () => {
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-      socket.off("broadcast:offer", onOffer);
-      socket.off("broadcast:ice", onIce);
-      socket.off("broadcast:viewer-count", onCount);
-      socket.off("broadcast:stopped", onStopped);
-      socket.off("broadcast:error", onError);
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-      socket.emit("broadcast:leave");
-      joinedRef.current = false;
+      clearConnectionTimeout();
       cleanupPeer();
       cleanupSignaling();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchId]);
+  }, [clearConnectionTimeout, cleanupPeer, cleanupSignaling]);
 
-  // Leave the room on unmount.
+  // Leave the room on unmount
   useEffect(() => {
     return () => {
       signalingRef.current?.emit("broadcast:leave");
     };
   }, []);
 
-  /**
-   * Retry: destroy the old socket entirely and create a fresh one.
-   * This is necessary because after exhausting reconnection attempts,
-   * Socket.IO's socket may be in a dead state where connect() doesn't
-   * reliably restart. Creating a new socket is the robust approach.
-   */
-  const retry = useCallback(() => {
-    console.log("[WebRTC Viewer] retrying connection");
-    setError(null);
-    joinedRef.current = false;
-    cleanupPeer();
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
-    }
-    // Destroy old socket completely.
-    cleanupSignaling();
-
-    // Create a fresh socket and connect.
-    const socketUrl = getClientSignalingUrl();
-    const socket = io(socketUrl, {
-      autoConnect: false,
-      reconnection: true,
-      reconnectionAttempts: 30,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 30000,
-    });
-    signalingRef.current = socket;
-
-    const onOffer = (payload: { offer: unknown; from: string }) => {
-      void handleOffer(payload);
-    };
-    const onIce = (payload: { candidate: unknown; from: string }) => {
-      const pc = pcRef.current;
-      if (pc && payload?.candidate) {
-        void pc
-          .addIceCandidate(payload.candidate as RTCIceCandidateInit)
-          .catch(() => {});
-      }
-    };
-    const onCount = (payload: { count: number }) => {
-      if (typeof payload?.count === "number") setViewerCount(payload.count);
-    };
-    const onStopped = () => {
-      cleanupPeer();
-      joinedRef.current = false;
-      setStatus("stopped");
-    };
-    const onError = (payload: { message?: string }) => {
-      setError(payload?.message ?? "Could not connect to the broadcast.");
-      setStatus("error");
-    };
-    const onConnect = () => {
-      console.log(`[WebRTC Viewer] retry connected - socket ${socket.id}`);
-      join();
-    };
-    const onDisconnect = (reason: string) => {
-      console.log(`[WebRTC Viewer] retry disconnected: ${reason}`);
-      cleanupPeer();
-      joinedRef.current = false;
-      if (statusRef.current === "live" || statusRef.current === "connecting") {
-        setStatus("reconnecting");
-      }
-    };
-
-    socket.on("broadcast:offer", onOffer);
-    socket.on("broadcast:ice", onIce);
-    socket.on("broadcast:viewer-count", onCount);
-    socket.on("broadcast:stopped", onStopped);
-    socket.on("broadcast:error", onError);
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-
-    socket.connect();
-
-    // Start a new connection timeout for the retry.
-    connectionTimeoutRef.current = window.setTimeout(() => {
-      if (
-        statusRef.current === "connecting" ||
-        statusRef.current === "idle"
-      ) {
-        setError(
-          "Unable to connect to broadcast. The broadcaster may not be live, or the signaling server may be unreachable."
-        );
-        setStatus("error");
-      }
-    }, 45_000);
-  }, [cleanupPeer, cleanupSignaling, handleOffer, join, setStatus]);
-
-  return { videoRef, status, error, viewerCount, retry };
+  return {
+    videoRef,
+    status,
+    error,
+    viewerCount,
+    retry,
+    startWatching,
+    needsUnmute,
+    unmute,
+  };
 }

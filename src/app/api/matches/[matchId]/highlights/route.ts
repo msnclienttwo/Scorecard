@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { markStaleHighlights } from "@/lib/video/highlights";
 
 export async function GET(
   _request: NextRequest,
@@ -16,11 +17,16 @@ export async function GET(
       return NextResponse.json({ error: "Match not found" }, { status: 404 });
     }
 
+    // Mark any stuck PENDING/PROCESSING highlights as FAILED before fetching.
+    // Fire-and-forget: if this fails the list still loads, just without
+    // recovering stale rows this time.
+    void markStaleHighlights().catch(() => {});
+
     const highlights = await prisma.matchVideoHighlight.findMany({
       where: {
         matchId,
         expiresAt: { gt: new Date() },
-        status: { in: ["PENDING", "PROCESSING", "READY"] },
+        status: { in: ["PENDING", "PROCESSING", "READY", "FAILED"] },
       },
       orderBy: [{ createdAt: "desc" }],
     });

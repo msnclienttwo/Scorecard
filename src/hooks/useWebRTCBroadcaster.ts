@@ -26,6 +26,13 @@ export type MediaReadyState =
 const DEFAULT_PRE_ROLL_SECONDS = 10;
 const DEFAULT_POST_ROLL_SECONDS = 5;
 
+/** Adaptive bitrate quality levels — ordered from highest to lowest quality. */
+const BITRATE_LEVELS = [
+  { maxBitrate: 2_500_000, maxFramerate: 30, label: "high" },
+  { maxBitrate: 1_500_000, maxFramerate: 24, label: "medium" },
+  { maxBitrate: 800_000, maxFramerate: 15, label: "low" },
+] as const;
+
 interface RollingChunk {
   id: number;
   blob: Blob;
@@ -57,6 +64,8 @@ export function useWebRTCBroadcaster(matchId: string) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const statsMonitorsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const bitrateLevelRef = useRef<Map<string, number>>(new Map());
   const iceServersRef = useRef<ClientIceServer[]>([]);
   const signalingRef = useRef<Socket | null>(null);
   const deviceIndexRef = useRef(0);
@@ -228,8 +237,122 @@ export function useWebRTCBroadcaster(matchId: string) {
   // Peer management (mesh)
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Adaptive bitrate — quality levels and network stats monitoring
+  // ---------------------------------------------------------------------------
+
+  const configureSenderEncoding = useCallback(
+    async (pc: RTCPeerConnection, viewerSocketId: string) => {
+      const level = 0; // start at high quality
+      bitrateLevelRef.current.set(viewerSocketId, level);
+      const config = BITRATE_LEVELS[level];
+
+      for (const sender of pc.getSenders()) {
+        if (sender.track?.kind === "video") {
+          try {
+            const params = await sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+              params.encodings = [{}];
+            }
+            params.encodings[0] = {
+              ...params.encodings[0],
+              maxBitrate: config.maxBitrate,
+              maxFramerate: config.maxFramerate,
+              networkPriority: "high",
+              priority: "high",
+            };
+            await sender.setParameters(params);
+            console.log(
+              `[WebRTC Broadcaster] encoding configured for viewer ${viewerSocketId}: ${config.label} (${config.maxBitrate / 1_000_000} Mbps, ${config.maxFramerate} fps)`
+            );
+          } catch {
+            // setParameters may fail on some browsers — not fatal
+          }
+          break;
+        }
+      }
+    },
+    []
+  );
+
+  const adjustBitrate = useCallback(
+    async (pc: RTCPeerConnection, viewerSocketId: string, direction: "up" | "down") => {
+      const current = bitrateLevelRef.current.get(viewerSocketId) ?? 0;
+      const next =
+        direction === "down"
+          ? Math.min(current + 1, BITRATE_LEVELS.length - 1)
+          : Math.max(current - 1, 0);
+      if (next === current) return;
+
+      bitrateLevelRef.current.set(viewerSocketId, next);
+      const config = BITRATE_LEVELS[next];
+
+      for (const sender of pc.getSenders()) {
+        if (sender.track?.kind === "video") {
+          try {
+            const params = await sender.getParameters();
+            if (params.encodings?.[0]) {
+              params.encodings[0].maxBitrate = config.maxBitrate;
+              params.encodings[0].maxFramerate = config.maxFramerate;
+              await sender.setParameters(params);
+              console.log(
+                `[WebRTC Broadcaster] bitrate adjusted for viewer ${viewerSocketId}: ${config.label} (${config.maxBitrate / 1_000_000} Mbps)`
+              );
+            }
+          } catch {
+            // not fatal
+          }
+          break;
+        }
+      }
+    },
+    []
+  );
+
+  const startStatsMonitor = useCallback(
+    (pc: RTCPeerConnection, viewerSocketId: string) => {
+      // Clear any existing monitor first to avoid interval leaks.
+      const existing = statsMonitorsRef.current.get(viewerSocketId);
+      if (existing) {
+        clearInterval(existing);
+      }
+
+      const interval = setInterval(async () => {
+        try {
+          const stats = await pc.getStats();
+          stats.forEach((report) => {
+            if (report.type !== "outbound-rtp" || report.kind !== "video") return;
+            const packetsLost = report.packetsLost ?? 0;
+            const roundTripTime = report.roundTripTime ?? 0;
+            const jitter = report.jitter ?? 0;
+
+            if (packetsLost > 10 || roundTripTime > 0.3 || jitter > 0.05) {
+              void adjustBitrate(pc, viewerSocketId, "down");
+            } else if (packetsLost === 0 && roundTripTime < 0.1) {
+              void adjustBitrate(pc, viewerSocketId, "up");
+            }
+          });
+        } catch {
+          // stats unavailable — not fatal
+        }
+      }, 5_000);
+      statsMonitorsRef.current.set(viewerSocketId, interval);
+    },
+    [adjustBitrate]
+  );
+
+  const stopStatsMonitor = useCallback((viewerSocketId: string) => {
+    const interval = statsMonitorsRef.current.get(viewerSocketId);
+    if (interval) {
+      clearInterval(interval);
+      statsMonitorsRef.current.delete(viewerSocketId);
+    }
+    bitrateLevelRef.current.delete(viewerSocketId);
+  }, []);
+
   const closePeers = useCallback(() => {
-    peersRef.current.forEach((pc) => {
+    peersRef.current.forEach((pc, id) => {
+      stopStatsMonitor(id);
       try {
         pc.close();
       } catch {
@@ -237,18 +360,28 @@ export function useWebRTCBroadcaster(matchId: string) {
       }
     });
     peersRef.current.clear();
-  }, []);
+  }, [stopStatsMonitor]);
 
   const createOffer = useCallback(async (viewerSocketId: string) => {
     const stream = streamRef.current;
     const socket = signalingRef.current;
     if (!stream || !socket) return;
 
+    // Clean up any stale peer for this viewer
+    const existing = peersRef.current.get(viewerSocketId);
+    if (existing) {
+      stopStatsMonitor(viewerSocketId);
+      try { existing.close(); } catch { /* ignore */ }
+    }
+
     console.log(`[WebRTC Broadcaster] creating offer for viewer ${viewerSocketId}`);
     const pc = new RTCPeerConnection({
       iceServers: iceServersRef.current.map((s) => ({ ...s })),
     });
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+    // Configure encoding parameters for quality
+    void configureSenderEncoding(pc, viewerSocketId);
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
@@ -262,12 +395,39 @@ export function useWebRTCBroadcaster(matchId: string) {
       console.log(`[WebRTC Broadcaster] ICE state for viewer ${viewerSocketId}: ${pc.iceConnectionState}`);
     };
     pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC Broadcaster] connection state for viewer ${viewerSocketId}: ${pc.connectionState}`);
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+      console.log(
+        `[WebRTC Broadcaster] connection state for viewer ${viewerSocketId}: ${pc.connectionState}`
+      );
+
+      if (pc.connectionState === "connected") {
+        startStatsMonitor(pc, viewerSocketId);
+        return;
+      }
+
+      if (
+        pc.connectionState === "failed" ||
+        pc.connectionState === "closed"
+      ) {
+        stopStatsMonitor(viewerSocketId);
+
         const live = peersRef.current.get(viewerSocketId);
+
         if (live === pc) {
           peersRef.current.delete(viewerSocketId);
-          socket.emit("broadcast:viewer-left", { socketId: viewerSocketId });
+
+          try {
+            socket.emit("broadcast:viewer-left", {
+              socketId: viewerSocketId,
+            });
+          } catch {
+            // Ignore signaling cleanup errors.
+          }
+        }
+
+        try {
+          pc.close();
+        } catch {
+          // Ignore already-closed peer connection errors.
         }
       }
     };
@@ -283,13 +443,14 @@ export function useWebRTCBroadcaster(matchId: string) {
       console.log(`[WebRTC Broadcaster] offer sent to viewer ${viewerSocketId}`);
     } catch {
       peersRef.current.delete(viewerSocketId);
+      stopStatsMonitor(viewerSocketId);
       try {
         pc.close();
       } catch {
         // ignore
       }
     }
-  }, []);
+  }, [configureSenderEncoding, startStatsMonitor, stopStatsMonitor]);
 
   // ---------------------------------------------------------------------------
   // Highlight recorder (rolling ~10s pre-roll, ~5s post-roll)

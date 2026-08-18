@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Radio, Users, WifiOff, RefreshCw } from "lucide-react";
+import { useSession } from "next-auth/react";
+import {
+  Radio,
+  Users,
+  WifiOff,
+  RefreshCw,
+  Link2,
+  VolumeX,
+} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSocketStore } from "@/store/useSocketStore";
 import { useWebRTCViewer } from "@/hooks/useWebRTCViewer";
@@ -10,9 +19,10 @@ import type { BroadcastState, ClientIceServer } from "@/types/video";
 
 /**
  * Live video block for the public score page. Sits above the score banner.
- * Media flows peer-to-peer over WebRTC; the Socket.IO server only relays
- * signaling. Renders as soon as the stream row is LIVE and keeps the score
- * banner independent of any video failure.
+ *
+ * Does NOT auto-connect to WebRTC — shows a "Watch Live" card when a broadcast
+ * is live, and only initializes the viewer after the user clicks the button.
+ * Requires authentication before watching.
  */
 export function ViewerLiveVideo({ matchId }: { matchId: string }) {
   const queryClient = useQueryClient();
@@ -49,13 +59,12 @@ export function ViewerLiveVideo({ matchId }: { matchId: string }) {
     return null;
   }
 
-  return (
-    <LiveVideoFeed
-      matchId={matchId}
-      iceServers={stream.iceServers ?? []}
-    />
-  );
+  return <LiveVideoFeed matchId={matchId} iceServers={stream.iceServers ?? []} />;
 }
+
+// ---------------------------------------------------------------------------
+// Inner feed component — only rendered when stream is LIVE
+// ---------------------------------------------------------------------------
 
 function LiveVideoFeed({
   matchId,
@@ -64,11 +73,54 @@ function LiveVideoFeed({
   matchId: string;
   iceServers: ClientIceServer[];
 }) {
-  const { videoRef, status, viewerCount, error, retry } = useWebRTCViewer(matchId, iceServers);
-  const showConnecting = status === "connecting" || status === "idle";
-  const showReconnecting = status === "reconnecting";
-  const showStopped = status === "stopped";
-  const showError = status === "error";
+  const router = useRouter();
+  const { data: session } = useSession();
+  const {
+    videoRef,
+    status,
+    viewerCount,
+    error,
+    retry,
+    startWatching,
+    needsUnmute,
+    unmute,
+  } = useWebRTCViewer(matchId, iceServers);
+
+  const [showCopied, setShowCopied] = useState(false);
+
+  const isIdle = status === "idle";
+  const isConnecting = status === "connecting" || status === "negotiating";
+  const isLive = status === "live";
+  const isReconnecting = status === "reconnecting";
+  const isStopped = status === "stopped";
+  const isError = status === "error";
+
+  // --- Auth-gated Watch Live ---
+  const handleWatchLive = () => {
+    if (!session?.user) {
+      router.push(
+        `/login?callbackUrl=${encodeURIComponent(`/score/${matchId}`)}`
+      );
+      return;
+    }
+    startWatching();
+  };
+
+  // --- Share ---
+  const handleShare = async () => {
+    const url = `${window.location.origin}/score/${matchId}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Watch Live", url });
+      } catch {
+        /* user cancelled */
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2000);
+    }
+  };
 
   return (
     <motion.div
@@ -86,33 +138,65 @@ function LiveVideoFeed({
           />
         </div>
 
-        <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-bold text-danger">
-          <span className="h-1.5 w-1.5 rounded-full bg-danger animate-pulse" />
-          LIVE
-        </div>
-        {viewerCount > 0 && (
+        {/* LIVE badge — only when actually playing */}
+        {isLive && (
+          <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-bold text-danger">
+            <span className="h-1.5 w-1.5 rounded-full bg-danger animate-pulse" />
+            LIVE
+          </div>
+        )}
+
+        {/* Viewer count */}
+        {isLive && viewerCount > 0 && (
           <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-medium text-muted">
             <Users className="h-3 w-3" />
             {viewerCount}
           </div>
         )}
 
-        {(showConnecting || showReconnecting) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
-            <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        {/* ---- IDLE: Watch Live card ---- */}
+        {isIdle && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
+            <div className="flex items-center gap-1.5 text-danger">
+              <span className="h-1.5 w-1.5 rounded-full bg-danger animate-pulse" />
+              <span className="text-xs font-bold">LIVE</span>
+            </div>
+            <p className="text-sm text-white/80">Live video is available</p>
+            <button
+              onClick={handleWatchLive}
+              className="flex items-center gap-2 rounded-full bg-danger px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-danger/25 transition-all hover:bg-danger/90 hover:shadow-xl hover:shadow-danger/30 active:scale-[0.98]"
+            >
+              <Radio className="h-4 w-4" />
+              Watch Live
+            </button>
+          </div>
+        )}
+
+        {/* ---- CONNECTING / NEGOTIATING ---- */}
+        {(isConnecting || isReconnecting) && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
+            {isReconnecting ? (
+              <RefreshCw className="h-6 w-6 text-muted animate-spin" />
+            ) : (
+              <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+            )}
             <p className="text-xs text-muted">
-              {showReconnecting ? "Reconnecting…" : "Connecting to broadcast…"}
+              {isReconnecting ? "Reconnecting\u2026" : "Connecting to broadcast\u2026"}
             </p>
           </div>
         )}
-        {showStopped && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
+
+        {/* ---- STOPPED ---- */}
+        {isStopped && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
             <WifiOff className="h-8 w-8 text-muted" />
-            <p className="text-xs text-muted">Broadcast ended</p>
+            <p className="text-xs text-muted">Live stream ended</p>
           </div>
         )}
-        {showError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 text-white">
+
+        {/* ---- ERROR ---- */}
+        {isError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70">
             <p className="text-xs text-danger text-center px-4">
               {error || "Live video unavailable"}
             </p>
@@ -125,12 +209,36 @@ function LiveVideoFeed({
             </button>
           </div>
         )}
+
+        {/* ---- ENABLE SOUND ---- */}
+        {isLive && needsUnmute && (
+          <button
+            onClick={unmute}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-black/90"
+          >
+            <VolumeX className="h-3 w-3" />
+            Enable Sound
+          </button>
+        )}
       </div>
-      <div className="flex items-center gap-2 bg-[#0a0f1a] px-4 py-2">
-        <Radio className="h-4 w-4 text-danger" />
-        <p className="text-xs text-muted">
-          Live broadcast — delivered directly from the broadcaster.
-        </p>
+
+      {/* Bottom bar */}
+      <div className="flex items-center justify-between bg-[#0a0f1a] px-4 py-2">
+        <div className="flex items-center gap-2">
+          <Radio className="h-4 w-4 text-danger" />
+          <p className="text-xs text-muted">
+            Live broadcast — delivered directly from the broadcaster.
+          </p>
+        </div>
+        {isLive && (
+          <button
+            onClick={handleShare}
+            className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Link2 className="h-3 w-3" />
+            {showCopied ? "Copied!" : "Share Live"}
+          </button>
+        )}
       </div>
     </motion.div>
   );

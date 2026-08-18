@@ -69,12 +69,15 @@ export function HighlightsSection({
   }, [isConnected, matchId, on, off, queryClient]);
 
   const highlights = useMemo(
-    () => (data?.highlights ?? []).filter((h) => h.status !== "FAILED"),
+    () => data?.highlights ?? [],
     [data]
   );
   const watching = highlights.find((h) => h.id === watchId) ?? null;
   const readyCount = highlights.filter((h) => h.status === "READY").length;
-  const pendingCount = highlights.length - readyCount;
+  const failedCount = highlights.filter((h) => h.status === "FAILED").length;
+  const pendingCount = highlights.filter(
+    (h) => h.status === "PENDING" || h.status === "PROCESSING"
+  ).length;
 
   if (isLoading) return null;
 
@@ -101,6 +104,11 @@ export function HighlightsSection({
             <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-warning">
               <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
               {pendingCount} processing
+            </span>
+          )}
+          {failedCount > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-muted">
+              {failedCount} failed
             </span>
           )}
         </h3>
@@ -157,7 +165,11 @@ export function HighlightsSection({
                   {style.label}
                 </span>
                 <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {ready ? `${h.duration}s clip` : "processing…"}
+                  {h.status === "READY"
+                    ? `${h.duration}s clip`
+                    : h.status === "FAILED"
+                      ? "upload failed"
+                      : "processing\u2026"}
                 </span>
               </button>
 

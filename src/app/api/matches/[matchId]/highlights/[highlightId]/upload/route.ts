@@ -15,13 +15,17 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ matchId: string; highlightId: string }> }
 ) {
+  let matchId: string | null = null;
+  let highlightId: string | null = null;
   try {
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
 
-    const { matchId, highlightId } = await params;
+    const p = await params;
+    matchId = p.matchId;
+    highlightId = p.highlightId;
 
     const [match, stream] = await Promise.all([
       prisma.match.findUnique({
@@ -56,6 +60,12 @@ export async function POST(
       return NextResponse.json({ error: "Highlight is too large." }, { status: 413 });
     }
 
+    // Mark PROCESSING so the UI shows progress rather than stuck PENDING.
+    await prisma.matchVideoHighlight.update({
+      where: { id: highlightId },
+      data: { status: "PROCESSING" },
+    });
+
     await uploadHighlight(
       matchId,
       highlightId,
@@ -65,6 +75,19 @@ export async function POST(
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    // On any error, mark the highlight FAILED so it never stays stuck in
+    // PENDING or PROCESSING.
+    if (matchId && highlightId) {
+      prisma.matchVideoHighlight
+        .update({
+          where: { id: highlightId },
+          data: {
+            status: "FAILED",
+            error: error instanceof Error ? error.message : "Upload failed",
+          },
+        })
+        .catch(() => {});
+    }
     const message = error instanceof Error ? error.message : "Upload failed";
     const status =
       message === "Highlight not found" ? 404 :

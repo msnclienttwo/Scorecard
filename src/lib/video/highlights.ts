@@ -20,6 +20,13 @@ export interface HighlightConfig {
 export const MAX_HIGHLIGHT_BYTES = 50 * 1024 * 1024;
 
 /**
+ * If a PENDING or PROCESSING highlight is older than this, the broadcaster
+ * likely failed to upload it (disconnected, MediaRecorder error, network).
+ * Mark it FAILED so it does not remain stuck forever.
+ */
+const HIGHLIGHT_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
  * Clip timing + retention. The browser records a rolling ~10s window and keeps
  * recording ~5s after a scoring event, then uploads that clip. Names prefer
  * the VIDEO_HIGHLIGHT_* vars and fall back to the legacy HIGHLIGHT_* names.
@@ -245,6 +252,37 @@ export async function uploadHighlight(
   });
 
   emitHighlightUpdated(matchId, { action: "ready", highlightId });
+}
+
+// ---------------------------------------------------------------------------
+// Stale highlight recovery — marks PENDING/PROCESSING rows as FAILED
+// ---------------------------------------------------------------------------
+
+/**
+ * Finds PENDING or PROCESSING highlights that are older than
+ * `HIGHLIGHT_UPLOAD_TIMEOUT_MS` (the broadcaster likely disconnected or the
+ * upload failed silently) and marks them FAILED so they never remain stuck.
+ *
+ * Returns the number of rows updated. Safe to call repeatedly.
+ */
+export async function markStaleHighlights(): Promise<number> {
+  const cutoff = new Date(Date.now() - HIGHLIGHT_UPLOAD_TIMEOUT_MS);
+  const result = await prisma.matchVideoHighlight.updateMany({
+    where: {
+      status: { in: ["PENDING", "PROCESSING"] },
+      createdAt: { lt: cutoff },
+    },
+    data: {
+      status: "FAILED",
+      error: "Upload timed out — the broadcaster may have disconnected before the clip could be delivered.",
+    },
+  });
+  if (result.count > 0) {
+    console.log(
+      `[Highlights] marked ${result.count} stale highlight(s) as FAILED (older than ${HIGHLIGHT_UPLOAD_TIMEOUT_MS / 60_000} min)`
+    );
+  }
+  return result.count;
 }
 
 // ---------------------------------------------------------------------------
