@@ -11,8 +11,8 @@
  *   - Database updates on broadcaster disconnect (marks stream as ENDED)
  *
  * Environment variables:
- *   PORT                           - listening port (default 3001)
- *   HOSTNAME                       - bind address (default 0.0.0.0)
+ *   PORT                           - listening port (default 10000)
+ *   BIND_HOST                      - bind address (default 0.0.0.0)
  *   DATABASE_URL                   - PostgreSQL connection string (same as Vercel)
  *   AUTH_SECRET / NEXTAUTH_SECRET  - HS256 key for signaling tokens
  *   WEBRTC_MAX_VIEWERS             - per-broadcast viewer cap (default 20)
@@ -42,8 +42,8 @@ const { verifySignalingToken } = require("./src/lib/video/signaling-token");
 // ---------------------------------------------------------------------------
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME || "0.0.0.0";
-const port = parseInt(process.env.PORT || "3001", 10);
+const hostname = process.env.BIND_HOST || "0.0.0.0";
+const port = Number(process.env.PORT) || 10000;
 
 const relaySecret = process.env.SIGNALING_RELAY_SECRET || "";
 const MAX_VIEWERS = (() => {
@@ -463,7 +463,7 @@ io.on("connection", (socket) => {
 // ---------------------------------------------------------------------------
 
 server.listen(port, hostname, () => {
-  console.log(`> ScoreBolt signaling server ready on http://${hostname}:${port}`);
+  console.log(`ScoreBolt signaling server listening on 0.0.0.0:${port}`);
   console.log(`> Socket.IO listening on path /socket.io`);
   console.log(`> CORS: open (any origin allowed)`);
   if (relaySecret) {
