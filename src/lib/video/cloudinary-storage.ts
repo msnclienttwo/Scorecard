@@ -42,26 +42,50 @@ function uploadBuffer(
 ): Promise<CloudinaryUploadResult> {
   ensureConfigured();
   return new Promise((resolve, reject) => {
+    console.log(
+      `[Highlight] Cloudinary upload_stream started match=${matchId} highlight=${highlightId} size=${data.byteLength}`
+    );
+
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: `${FOLDER_PREFIX}/${matchId}`,
         public_id: highlightId,
         resource_type: "video",
-        format: "webm",
         overwrite: true,
       },
       (error, result) => {
         if (error) {
+          console.error(
+            `[Highlight] Cloudinary upload_stream error match=${matchId} highlight=${highlightId}`,
+            error.name ?? "Error",
+            error.message ?? error
+          );
           reject(error);
           return;
         }
         if (!result) {
-          reject(new Error("Cloudinary returned no result"));
+          const err = new Error("Cloudinary returned no result");
+          console.error(
+            `[Highlight] Cloudinary upload_stream empty result match=${matchId} highlight=${highlightId}`
+          );
+          reject(err);
           return;
         }
+        console.log(
+          `[Highlight] Cloudinary upload_stream success match=${matchId} highlight=${highlightId} public_id=${result.public_id}`
+        );
         resolve({ secureUrl: result.secure_url, publicId: result.public_id });
       }
     );
+
+    stream.on("error", (err) => {
+      console.error(
+        `[Highlight] Cloudinary stream error match=${matchId} highlight=${highlightId}`,
+        err.message
+      );
+      reject(err);
+    });
+
     stream.end(data);
   });
 }

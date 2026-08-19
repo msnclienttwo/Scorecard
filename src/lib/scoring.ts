@@ -870,7 +870,18 @@ export async function undoLastBall(
   await prisma.$transaction(async (tx) => {
     await tx.ball.delete({ where: { id: lastBall.id } });
     await tx.commentary.deleteMany({ where: { ballId: lastBall.id } });
-    await tx.innings.update({ where: { id: innings.id }, data: { endedAt: null } });
+    // Reset innings striker/non-striker to the pre-ball state so that
+    // recomputeInnings replays from the correct starting point. Each ball
+    // stores batsmanId (striker) and nonStrikerId (non-striker) at the
+    // moment of delivery, BEFORE any rotation was applied by that ball.
+    await tx.innings.update({
+      where: { id: innings.id },
+      data: {
+        endedAt: null,
+        strikerId: lastBall.batsmanId,
+        nonStrikerId: lastBall.nonStrikerId,
+      },
+    });
     await tx.match.update({
       where: { id: matchId },
       data: {
@@ -1003,7 +1014,16 @@ export async function deleteBall(
   await prisma.$transaction(async (tx) => {
     await tx.ball.delete({ where: { id: ballId } });
     await tx.commentary.deleteMany({ where: { ballId } });
-    await tx.innings.update({ where: { id: innings.id }, data: { endedAt: null } });
+    // Reset innings to the pre-ball state so recomputeInnings replays from
+    // the correct starting point. See undoLastBall for the rationale.
+    await tx.innings.update({
+      where: { id: innings.id },
+      data: {
+        endedAt: null,
+        strikerId: existing.batsmanId,
+        nonStrikerId: existing.nonStrikerId,
+      },
+    });
     await tx.match.update({
       where: { id: matchId },
       data: {
@@ -1838,10 +1858,15 @@ async function recomputeInnings(
   const fowList: { ball: Ball; runs: number; overs: number }[] = [];
   let cumRuns = 0;
   let cumLegal = 0;
-  // Seed with the persisted openers so an empty ball record (e.g. after
-  // undoing every delivery) keeps the innings ready to continue scoring.
-  let strikerId: string | null = innings.strikerId;
-  let nonStrikerId: string | null = innings.nonStrikerId;
+  // Seed from the first ball's opener pair. Each ball stores the exact
+  // batsmanId (striker) and nonStrikerId (non-striker) at the moment of
+  // delivery, BEFORE rotation is applied. Using the first ball's values
+  // as the seed ensures that undo/delete/edit correctly restore the
+  // pre-ball batting state without a hardcoded "undo single" patch.
+  // When no balls remain (all undone) the persisted innings values are
+  // the original openers (set by setOpeners or reset by undo/delete).
+  let strikerId: string | null = balls.length > 0 ? balls[0].batsmanId : innings.strikerId;
+  let nonStrikerId: string | null = balls.length > 0 ? balls[0].nonStrikerId : innings.nonStrikerId;
   // Physical end the striker faces from. The end only flips at over
   // boundaries; each ball's stored end overrides the tracked value so manual
   // live-state changes that didn't create a ball survive a recompute.

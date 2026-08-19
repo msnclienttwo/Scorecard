@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { uploadHighlight, MAX_HIGHLIGHT_BYTES } from "@/lib/video/highlights";
 import { canManageBroadcast } from "@/lib/video/broadcast";
 
+export const maxDuration = 60;
+
 /**
  * Receives a highlight clip cut by the broadcaster's MediaRecorder (raw body,
  * Content-Type: video/webm) and flips the PENDING row to READY.
@@ -53,12 +55,18 @@ export async function POST(
     }
 
     const arrayBuffer = await request.arrayBuffer();
-    if (arrayBuffer.byteLength === 0) {
+    const byteLength = arrayBuffer.byteLength;
+
+    if (byteLength === 0) {
       return NextResponse.json({ error: "Empty upload." }, { status: 400 });
     }
-    if (arrayBuffer.byteLength > MAX_HIGHLIGHT_BYTES) {
+    if (byteLength > MAX_HIGHLIGHT_BYTES) {
       return NextResponse.json({ error: "Highlight is too large." }, { status: 413 });
     }
+
+    console.log(
+      `[Highlight] Upload received match=${matchId} highlight=${highlightId} size=${byteLength} content-type=${contentType}`
+    );
 
     // Mark PROCESSING so the UI shows progress rather than stuck PENDING.
     await prisma.matchVideoHighlight.update({
@@ -73,8 +81,19 @@ export async function POST(
       contentType
     );
 
+    console.log(
+      `[Highlight] Upload complete match=${matchId} highlight=${highlightId}`
+    );
+
     return NextResponse.json({ ok: true });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Upload failed";
+
+    console.error(
+      `[Highlight] Upload failed match=${matchId} highlight=${highlightId} error=${message}`,
+      error instanceof Error ? error.stack : error
+    );
+
     // On any error, mark the highlight FAILED so it never stays stuck in
     // PENDING or PROCESSING.
     if (matchId && highlightId) {
@@ -83,12 +102,11 @@ export async function POST(
           where: { id: highlightId },
           data: {
             status: "FAILED",
-            error: error instanceof Error ? error.message : "Upload failed",
+            error: message,
           },
         })
         .catch(() => {});
     }
-    const message = error instanceof Error ? error.message : "Upload failed";
     const status =
       message === "Highlight not found" ? 404 :
       message === "Highlight has expired." ? 410 :
