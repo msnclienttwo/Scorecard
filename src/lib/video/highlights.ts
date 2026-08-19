@@ -7,6 +7,10 @@ import {
 } from "@/lib/realtime";
 import { isVideoConfigured } from "./provider";
 import { getHighlightStorage } from "./storage";
+import {
+  uploadHighlightToCloudinary,
+  deleteCloudinaryVideo,
+} from "./cloudinary-storage";
 
 export type HighlightEventType = "FOUR" | "SIX" | "WICKET";
 
@@ -213,6 +217,12 @@ export async function maybeAutoRecordHighlight(
  * Persists an uploaded highlight clip, flips the row to READY and notifies
  * subscribers. Throws on validation failures so the route can map them to HTTP
  * status codes. Authorization is enforced by the caller (the upload route).
+ *
+ * Production: uploads to Cloudinary, stores secure_url in playbackUrl and
+ * public_id in providerVideoId. The row is NEVER marked READY until the
+ * Cloudinary upload succeeds.
+ *
+ * Development (no Cloudinary configured): falls back to local filesystem.
  */
 export async function uploadHighlight(
   matchId: string,
@@ -239,17 +249,51 @@ export async function uploadHighlight(
       ? contentType
       : "video/webm";
 
-  await getHighlightStorage().save(matchId, highlightId, data, mime);
+  const useCloudinary = Boolean(process.env.CLOUDINARY_CLOUD_NAME);
 
-  await prisma.matchVideoHighlight.update({
-    where: { id: highlightId },
-    data: {
-      status: "READY",
-      playbackUrl: `/api/matches/${matchId}/highlights/${highlightId}/play`,
-      downloadUrl: `/api/matches/${matchId}/highlights/${highlightId}/download`,
-      error: null,
-    },
-  });
+  if (useCloudinary) {
+    console.log(
+      `[Highlight] Upload started for highlight=${highlightId} match=${matchId} size=${data.byteLength}`
+    );
+
+    const cloudResult = await uploadHighlightToCloudinary(
+      matchId,
+      highlightId,
+      data
+    );
+
+    console.log(
+      `[Highlight] Cloudinary upload successful highlight=${highlightId} public_id=${cloudResult.publicId}`
+    );
+
+    await prisma.matchVideoHighlight.update({
+      where: { id: highlightId },
+      data: {
+        status: "READY",
+        providerVideoId: cloudResult.publicId,
+        playbackUrl: cloudResult.secureUrl,
+        downloadUrl: `/api/matches/${matchId}/highlights/${highlightId}/download`,
+        error: null,
+      },
+    });
+
+    console.log(
+      `[Highlight] Database updated READY highlight=${highlightId}`
+    );
+  } else {
+    // Local filesystem fallback (development)
+    await getHighlightStorage().save(matchId, highlightId, data, mime);
+
+    await prisma.matchVideoHighlight.update({
+      where: { id: highlightId },
+      data: {
+        status: "READY",
+        playbackUrl: `/api/matches/${matchId}/highlights/${highlightId}/play`,
+        downloadUrl: `/api/matches/${matchId}/highlights/${highlightId}/download`,
+        error: null,
+      },
+    });
+  }
 
   emitHighlightUpdated(matchId, { action: "ready", highlightId });
 }
@@ -290,9 +334,18 @@ export async function markStaleHighlights(): Promise<number> {
 // ---------------------------------------------------------------------------
 
 /**
- * Idempotent sweep for expired highlight clips across every match. Deletes the
- * stored file first so a retry can still clean up the database row. Safe when
- * the file is already missing (ENOENT is swallowed by the storage layer).
+ * Idempotent sweep for expired highlight clips across every match.
+ *
+ * For Cloudinary-backed highlights (providerVideoId set):
+ *   1. Delete the Cloudinary video resource using the stored public_id
+ *   2. Update the DB row to EXPIRED
+ *
+ * For old local-file highlights (no providerVideoId):
+ *   1. Delete the local file
+ *   2. Update the DB row to EXPIRED
+ *
+ * Safe to run repeatedly. If Cloudinary deletion fails the row is left as-is
+ * so the next sweep can retry.
  */
 export async function cleanupExpiredHighlights(): Promise<number> {
   const expired = await prisma.matchVideoHighlight.findMany({
@@ -300,19 +353,51 @@ export async function cleanupExpiredHighlights(): Promise<number> {
       expiresAt: { lte: new Date() },
       status: { not: "EXPIRED" },
     },
-    select: { id: true, matchId: true },
+    select: { id: true, matchId: true, providerVideoId: true },
   });
 
   const storage = getHighlightStorage();
+  const idsToDelete: string[] = [];
+  const cloudinaryIdsToDelete: string[] = [];
+
   for (const h of expired) {
-    await storage.delete(h.matchId, h.id);
+    if (h.providerVideoId) {
+      // Cloudinary-backed highlight
+      try {
+        await deleteCloudinaryVideo(h.providerVideoId);
+        cloudinaryIdsToDelete.push(h.providerVideoId);
+        idsToDelete.push(h.id);
+        console.log(
+          `[Highlight] Cleanup deleted Cloudinary resource public_id=${h.providerVideoId} highlight=${h.id}`
+        );
+      } catch (err) {
+        console.error(
+          `[Highlight] Cleanup failed to delete Cloudinary resource for highlight=${h.id}:`,
+          err
+        );
+      }
+    } else {
+      // Old local-file highlight — try deleting the file, then mark EXPIRED
+      try {
+        await storage.delete(h.matchId, h.id);
+      } catch {
+        // Swallow — file may already be gone
+      }
+      idsToDelete.push(h.id);
+    }
   }
 
-  await prisma.matchVideoHighlight.updateMany({
-    where: { id: { in: expired.map((h) => h.id) } },
-    data: { status: "EXPIRED" },
-  });
-  return expired.length;
+  if (idsToDelete.length > 0) {
+    await prisma.matchVideoHighlight.updateMany({
+      where: { id: { in: idsToDelete } },
+      data: { status: "EXPIRED" },
+    });
+    console.log(
+      `[Highlight] Cleanup marked ${idsToDelete.length} highlight(s) as EXPIRED (${cloudinaryIdsToDelete.length} Cloudinary resources deleted)`
+    );
+  }
+
+  return idsToDelete.length;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,18 +1,21 @@
 /**
- * Local file storage for highlight clips.
+ * Storage abstraction for highlight video clips.
  *
- * ScoreBolt never stores live video — highlights are short webm clips cut in
- * the browser by the broadcaster's MediaRecorder and uploaded here. Each clip
- * lives at `{VIDEO_STORAGE_PATH}/{matchId}/{highlightId}.webm`. The database
- * row only holds metadata + expiry; the file is deleted when the row expires.
+ * Production: Cloudinary (persistent, works on Vercel serverless).
+ * Development / backward-compat: local filesystem.
  *
- * The storage root defaults to `/data/scorebolt/highlights` on Linux/macOS and
- * `.data/scorebolt/highlights` inside the project on Windows dev machines.
- * Override with VIDEO_STORAGE_PATH. Serverless/Vercel deployments need a
- * persistent volume (see docs/WEBRTC_SETUP.md).
+ * The storage backend is selected at runtime:
+ *   - If CLOUDINARY_CLOUD_NAME is set → Cloudinary adapter
+ *   - Otherwise → local filesystem adapter
+ *
+ * For Cloudinary-backed highlights the database row stores:
+ *   providerVideoId  → Cloudinary public_id
+ *   playbackUrl      → Cloudinary secure_url
+ *   downloadUrl      → internal ScoreBolt download endpoint
  */
 import { promises as fs } from "fs";
 import path from "path";
+import { cloudinaryHighlightStorage } from "./cloudinary-storage";
 
 export interface StoredHighlight {
   buffer: Buffer;
@@ -32,6 +35,10 @@ export interface HighlightStorage {
   delete(matchId: string, highlightId: string): Promise<void>;
   exists(matchId: string, highlightId: string): Promise<boolean>;
 }
+
+// ---------------------------------------------------------------------------
+// Local filesystem adapter (dev / backward-compat for old highlights)
+// ---------------------------------------------------------------------------
 
 export function storageRoot(): string {
   return (
@@ -86,6 +93,17 @@ export const localHighlightStorage: HighlightStorage = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Backend selection
+// ---------------------------------------------------------------------------
+
+function isCloudinaryConfigured(): boolean {
+  return Boolean(process.env.CLOUDINARY_CLOUD_NAME);
+}
+
 export function getHighlightStorage(): HighlightStorage {
+  if (isCloudinaryConfigured()) {
+    return cloudinaryHighlightStorage;
+  }
   return localHighlightStorage;
 }

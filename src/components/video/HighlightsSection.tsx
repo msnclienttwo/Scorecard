@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Clapperboard, Download, Flame, Play, Rocket, Target, X } from "lucide-react";
+import {
+  AlertCircle,
+  Clapperboard,
+  Download,
+  Flame,
+  Play,
+  Rocket,
+  Target,
+  X,
+} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSocketStore } from "@/store/useSocketStore";
 import type { HighlightRef } from "@/types/video";
@@ -16,19 +25,19 @@ const EVENT_STYLES: Record<
     icon: Flame,
     color: "text-accent",
     bg: "bg-accent/15",
-    label: "🔥 FOUR",
+    label: "\uD83D\uDD25 FOUR",
   },
   SIX: {
     icon: Rocket,
     color: "text-warning",
     bg: "bg-warning/15",
-    label: "🚀 SIX",
+    label: "\uD83D\uDE80 SIX",
   },
   WICKET: {
     icon: Target,
     color: "text-danger",
     bg: "bg-danger/15",
-    label: "🎯 WICKET",
+    label: "\uD83C\uDFAF WICKET",
   },
 };
 
@@ -42,6 +51,7 @@ export function HighlightsSection({
   const queryClient = useQueryClient();
   const { isConnected, on, off } = useSocketStore();
   const [watchId, setWatchId] = useState<string | null>(null);
+  const [videoErrors, setVideoErrors] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
     queryKey: ["highlights", matchId],
@@ -68,16 +78,21 @@ export function HighlightsSection({
     return () => off("highlight:updated", handler);
   }, [isConnected, matchId, on, off, queryClient]);
 
-  const highlights = useMemo(
-    () => data?.highlights ?? [],
-    [data]
-  );
+  const highlights = useMemo(() => data?.highlights ?? [], [data]);
   const watching = highlights.find((h) => h.id === watchId) ?? null;
   const readyCount = highlights.filter((h) => h.status === "READY").length;
   const failedCount = highlights.filter((h) => h.status === "FAILED").length;
   const pendingCount = highlights.filter(
     (h) => h.status === "PENDING" || h.status === "PROCESSING"
   ).length;
+
+  function markVideoError(id: string) {
+    setVideoErrors((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }
 
   if (isLoading) return null;
 
@@ -118,8 +133,11 @@ export function HighlightsSection({
         {highlights.map((h, i) => {
           const style = EVENT_STYLES[h.eventType] ?? EVENT_STYLES.FOUR!;
           const Icon = style.icon;
-          const overText = formatStoredOvers((h.overNumber - 1) * 6 + h.ballNumber);
+          const overText = formatStoredOvers(
+            (h.overNumber - 1) * 6 + h.ballNumber
+          );
           const ready = h.status === "READY" && h.playbackUrl;
+          const videoFailed = videoErrors.has(h.id);
           return (
             <motion.div
               key={h.id}
@@ -136,7 +154,14 @@ export function HighlightsSection({
                   ready ? "cursor-pointer" : "cursor-default"
                 )}
               >
-                {h.thumbnailUrl ? (
+                {videoFailed ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-2">
+                    <AlertCircle className="h-8 w-8 text-muted" />
+                    <span className="text-[11px] text-muted">
+                      Highlight unavailable
+                    </span>
+                  </div>
+                ) : h.thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={h.thumbnailUrl}
@@ -148,7 +173,7 @@ export function HighlightsSection({
                     <Icon className={cn("h-10 w-10", style.color)} />
                   </div>
                 )}
-                {ready && (
+                {ready && !videoFailed && (
                   <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
                     <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black">
                       <Play className="h-5 w-5" fill="currentColor" />
@@ -165,11 +190,13 @@ export function HighlightsSection({
                   {style.label}
                 </span>
                 <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {h.status === "READY"
-                    ? `${h.duration}s clip`
-                    : h.status === "FAILED"
-                      ? "upload failed"
-                      : "processing\u2026"}
+                  {videoFailed
+                    ? "unavailable"
+                    : h.status === "READY"
+                      ? `${h.duration}s clip`
+                      : h.status === "FAILED"
+                        ? "upload failed"
+                        : "processing\u2026"}
                 </span>
               </button>
 
@@ -181,7 +208,7 @@ export function HighlightsSection({
                   <span className="text-[11px] text-muted tabular-nums">
                     Over {overText}
                   </span>
-                  {ready && (
+                  {ready && !videoFailed && (
                     <a
                       href={`/api/matches/${h.matchId}/highlights/${h.id}/download`}
                       target="_blank"
@@ -219,27 +246,39 @@ export function HighlightsSection({
               <X className="h-5 w-5" />
             </button>
             <div className="aspect-video">
-              <video
-                key={watching.playbackUrl}
-                src={watching.playbackUrl}
-                poster={watching.thumbnailUrl ?? undefined}
-                controls
-                autoPlay
-                playsInline
-                className="h-full w-full bg-black"
-              />
+              {videoErrors.has(watching.id) ? (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0a0f1a]">
+                  <AlertCircle className="h-10 w-10 text-muted" />
+                  <p className="text-sm text-muted">Highlight unavailable</p>
+                </div>
+              ) : (
+                <video
+                  key={watching.playbackUrl}
+                  src={watching.playbackUrl}
+                  poster={watching.thumbnailUrl ?? undefined}
+                  controls
+                  autoPlay
+                  playsInline
+                  onError={() => markVideoError(watching.id)}
+                  className="h-full w-full bg-black"
+                />
+              )}
             </div>
             <div className="flex items-center justify-between bg-[#0a0f1a] px-4 py-3">
-              <p className="text-sm font-semibold text-white">{watching.title}</p>
-              <a
-                href={`/api/matches/${watching.matchId}/highlights/${watching.id}/download`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/15"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </a>
+              <p className="text-sm font-semibold text-white">
+                {watching.title}
+              </p>
+              {!videoErrors.has(watching.id) && (
+                <a
+                  href={`/api/matches/${watching.matchId}/highlights/${watching.id}/download`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/15"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </a>
+              )}
             </div>
           </div>
         </motion.div>

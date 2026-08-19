@@ -61,7 +61,9 @@ describe("detectHighlightEvent", () => {
     expect(detectHighlightEvent(fakeBall({ runs: 6 }))).toBe("SIX");
   });
   it("detects WICKET ahead of runs", () => {
-    expect(detectHighlightEvent(fakeBall({ runs: 6, isWicket: true }))).toBe("WICKET");
+    expect(detectHighlightEvent(fakeBall({ runs: 6, isWicket: true }))).toBe(
+      "WICKET"
+    );
   });
   it("returns null for a dot ball", () => {
     expect(detectHighlightEvent(fakeBall())).toBeNull();
@@ -77,7 +79,9 @@ describe("computeHighlightExpiry", () => {
   it("uses the configured retention hours by default", () => {
     process.env.VIDEO_HIGHLIGHT_RETENTION_HOURS = "24";
     const now = new Date("2026-08-14T12:00:00Z");
-    expect(computeHighlightExpiry(now, 24).toISOString()).toBe("2026-08-15T12:00:00.000Z");
+    expect(computeHighlightExpiry(now, 24).toISOString()).toBe(
+      "2026-08-15T12:00:00.000Z"
+    );
     delete process.env.VIDEO_HIGHLIGHT_RETENTION_HOURS;
   });
 });
@@ -101,7 +105,11 @@ describe("getHighlightConfig", () => {
 
   it("uses sane defaults", () => {
     const cfg = getHighlightConfig();
-    expect(cfg).toEqual({ preRollSeconds: 10, postRollSeconds: 5, retentionHours: 12 });
+    expect(cfg).toEqual({
+      preRollSeconds: 10,
+      postRollSeconds: 5,
+      retentionHours: 12,
+    });
   });
 
   it("reads the VIDEO_HIGHLIGHT_* names", () => {

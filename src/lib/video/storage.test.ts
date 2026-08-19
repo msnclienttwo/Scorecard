@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach, beforeEach } from "vitest";
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
@@ -11,7 +11,10 @@ import {
 let tmpRoot: string;
 
 beforeEach(async () => {
-  tmpRoot = path.join(os.tmpdir(), `scorebolt-storage-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  tmpRoot = path.join(
+    os.tmpdir(),
+    `scorebolt-storage-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
   process.env.VIDEO_STORAGE_PATH = tmpRoot;
 });
 
@@ -35,19 +38,43 @@ describe("localHighlightStorage", () => {
 
   it("stores at the expected path", async () => {
     await localHighlightStorage.save("m1", "h1", Buffer.from("x"), "video/webm");
-    expect(highlightFilePath("m1", "h1")).toBe(path.join(storageRoot(), "m1", "h1.webm"));
-    await expect(fs.access(highlightFilePath("m1", "h1"))).resolves.toBeUndefined();
+    expect(highlightFilePath("m1", "h1")).toBe(
+      path.join(storageRoot(), "m1", "h1.webm")
+    );
+    await expect(
+      fs.access(highlightFilePath("m1", "h1"))
+    ).resolves.toBeUndefined();
   });
 
   it("delete is idempotent and clears the file", async () => {
     await localHighlightStorage.save("m1", "h1", Buffer.from("x"), "video/webm");
     await localHighlightStorage.delete("m1", "h1");
     expect(await localHighlightStorage.exists("m1", "h1")).toBe(false);
-    await expect(localHighlightStorage.delete("m1", "h1")).resolves.toBeUndefined();
+    await expect(
+      localHighlightStorage.delete("m1", "h1")
+    ).resolves.toBeUndefined();
     expect(await localHighlightStorage.load("m1", "h1")).toBeNull();
   });
 
   it("load returns null for a missing clip", async () => {
     expect(await localHighlightStorage.load("m1", "nope")).toBeNull();
+  });
+});
+
+describe("getHighlightStorage", () => {
+  const origCloudName = process.env.CLOUDINARY_CLOUD_NAME;
+
+  afterEach(() => {
+    if (origCloudName === undefined) {
+      delete process.env.CLOUDINARY_CLOUD_NAME;
+    } else {
+      process.env.CLOUDINARY_CLOUD_NAME = origCloudName;
+    }
+  });
+
+  it("returns local storage when CLOUDINARY_CLOUD_NAME is not set", async () => {
+    delete process.env.CLOUDINARY_CLOUD_NAME;
+    const { getHighlightStorage } = await import("@/lib/video/storage");
+    expect(getHighlightStorage().id).toBe("local");
   });
 });
