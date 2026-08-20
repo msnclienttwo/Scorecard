@@ -12,16 +12,12 @@ import type { HighlightStorage } from "./storage";
  * CLOUDINARY_API_SECRET never leaves the server.
  */
 
-let configured = false;
-
 function ensureConfigured() {
-  if (configured) return;
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
   });
-  configured = true;
 }
 
 const FOLDER_PREFIX = "scorebolt/highlights";
@@ -41,8 +37,18 @@ function uploadBuffer(
   data: Buffer
 ): Promise<CloudinaryUploadResult> {
   ensureConfigured();
+
+  const cfg = cloudinary.config() as Record<string, unknown> | undefined;
+  console.warn(
+    `[Highlight][Diag] CLOUDINARY_CLOUD_NAME="${process.env.CLOUDINARY_CLOUD_NAME ?? "(unset)"}" ` +
+    `API_KEY_EXISTS=${!!process.env.CLOUDINARY_API_KEY} ` +
+    `API_SECRET_EXISTS=${!!process.env.CLOUDINARY_API_SECRET} ` +
+    `CLOUDINARY_URL_EXISTS=${!!process.env.CLOUDINARY_URL} ` +
+    `sdk_cloud_name="${(cfg?.cloud_name as string) ?? "(unset)"}"`
+  );
+
   return new Promise((resolve, reject) => {
-    console.log(
+    console.warn(
       `[Highlight] Cloudinary upload_stream started match=${matchId} highlight=${highlightId} size=${data.byteLength}`
     );
 
@@ -71,7 +77,7 @@ function uploadBuffer(
           reject(err);
           return;
         }
-        console.log(
+        console.warn(
           `[Highlight] Cloudinary upload_stream success match=${matchId} highlight=${highlightId} public_id=${result.public_id}`
         );
         resolve({ secureUrl: result.secure_url, publicId: result.public_id });
